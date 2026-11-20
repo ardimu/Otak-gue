@@ -12,7 +12,9 @@
  */
 
 const AGING_BUCKETS = ['Not yet due', '1-30 days', '31-60 days', '61-90 days', 'Over 90 days'];
+const AGING_BUCKETS_ID = ['Belum jatuh tempo', '1-30 hari', '31-60 hari', '61-90 hari', 'Lebih dari 90 hari'];
 const bucketOf_ = days => (days <= 0 ? 0 : days <= 30 ? 1 : days <= 60 ? 2 : days <= 90 ? 3 : 4);
+function noPartyLabel_() { return tr_('(no customer or supplier)', '(tanpa pelanggan atau pemasok)'); }
 
 /**
  * lines = [{date, due, id, line, ref, party, partyId, debit, credit}] on ONE control account.
@@ -24,7 +26,7 @@ function agingBuild_(lines, side, asOf) {
     .sort((a, b) => (a.date - b.date) || String(a.id).localeCompare(String(b.id)) || (a.line - b.line))
     .forEach(l => {
       const key = l.partyId || l.party || '';
-      if (!groups.has(key)) groups.set(key, { name: l.party || '(no customer or supplier)', events: [] });
+      if (!groups.has(key)) groups.set(key, { name: l.party || noPartyLabel_(), events: [] });
       groups.get(key).events.push(l);
     });
   const parties = [];
@@ -64,7 +66,10 @@ function agingBuild_(lines, side, asOf) {
 }
 
 function agingReports_(parties, side, asOf, meta) {
-  const who = side === 'AR' ? 'Customer' : 'Supplier', what = side === 'AR' ? 'Receivables' : 'Payables';
+  const who = side === 'AR' ? tr_('Customer', 'Pelanggan') : tr_('Supplier', 'Pemasok');
+  const what = side === 'AR' ? tr_('Receivables', 'Piutang') : tr_('Payables', 'Utang');
+  const agingTitle = side === 'AR' ? tr_('Receivables Aging', 'Umur Piutang') : tr_('Payables Aging', 'Umur Utang');
+  const itemsTitle = side === 'AR' ? tr_('Receivables Open Items', 'Item Terbuka Piutang') : tr_('Payables Open Items', 'Item Terbuka Utang');
   const tot = [0, 0, 0, 0, 0], rows = [];
   let open = 0, un = 0;
   parties.forEach(p => {
@@ -72,27 +77,36 @@ function agingReports_(parties, side, asOf, meta) {
     open += p.open; un += p.unapplied;
     rows.push({ k: 'l', c: [p.name].concat(p.buckets, [p.open, p.unapplied, p.net]) });
   });
-  rows.push({ k: 't', c: ['Total'].concat(tot.map(r2_), [r2_(open), r2_(un), r2_(open - un)]) });
-  const unassigned = parties.find(p => p.name.indexOf('(no ') === 0);
-  if (unassigned) rows.push({ k: 'x', c: ['Some lines have no ' + who.toLowerCase() + '. Edit them so they appear under the right name.'] });
-  const summary = { title: meta.company + ' - ' + what + ' Aging', subtitle: 'As at ' + isoDate_(asOf) + '. Days past due date. Payments matched to the oldest invoice first.',
-    header: [who].concat(AGING_BUCKETS, ['Open invoices', 'Unapplied payments', 'Net balance']), rows: rows, numFrom: 2, decimals: 0, widths: [300, 110, 110, 110, 110, 110, 130, 140, 130] };
+  rows.push({ k: 't', c: [tr_('Total', 'Total')].concat(tot.map(r2_), [r2_(open), r2_(un), r2_(open - un)]) });
+  const unassigned = parties.find(p => p.name === noPartyLabel_() || p.name.indexOf('(no ') === 0);
+  if (unassigned) rows.push({ k: 'x', c: [tr_('Some lines have no ' + who.toLowerCase() + '. Edit them so they appear under the right name.',
+    'Ada baris tanpa ' + who.toLowerCase() + '. Edit baris tersebut agar muncul di bawah nama yang tepat.')] });
+  const summary = { title: meta.company + ' - ' + agingTitle,
+    subtitle: tr_('As at ' + isoDate_(asOf) + '. Days past due date. Payments matched to the oldest invoice first.',
+      'Pada ' + isoDate_(asOf) + '. Hari keterlambatan dihitung sejak tanggal jatuh tempo. Pembayaran dicocokkan dengan faktur tertua terlebih dahulu.'),
+    header: [who].concat(AGING_BUCKETS.map((b, i) => tr_(b, AGING_BUCKETS_ID[i])),
+      [tr_('Open invoices', 'Faktur belum lunas'), tr_('Unapplied payments', 'Pembayaran belum dialokasikan'), tr_('Net balance', 'Saldo Bersih')]),
+    rows: rows, numFrom: 2, decimals: 0, widths: [300, 110, 110, 110, 110, 110, 130, 140, 130] };
   const items = [];
   parties.forEach(p => p.items.slice().sort((a, b) => a.due - b.due).forEach(o => {
     items.push({ k: 'l', c: [p.name, o.ref, o.id, isoDate_(o.date), isoDate_(o.due), o.amount, o.open, Math.max(o.days, 0)] });
   }));
-  const detail = { title: meta.company + ' - ' + what + ' Open Items', subtitle: 'As at ' + isoDate_(asOf),
-    header: [who, 'Reference', 'Journal ID', 'Date', 'Due date', 'Invoice amount', 'Open amount', 'Days overdue'], rows: items, numFrom: 6, decimals: 0, widths: [260, 140, 130, 100, 100, 130, 130, 110] };
+  const detail = { title: meta.company + ' - ' + itemsTitle, subtitle: tr_('As at ' + isoDate_(asOf), 'Pada ' + isoDate_(asOf)),
+    header: [who, tr_('Reference', 'Referensi'), tr_('Journal ID', 'ID Jurnal'), tr_('Date', 'Tanggal'), tr_('Due date', 'Tanggal Jatuh Tempo'),
+      tr_('Invoice amount', 'Jumlah Faktur'), tr_('Open amount', 'Jumlah Belum Lunas'), tr_('Days overdue', 'Hari Keterlambatan')],
+    rows: items, numFrom: 6, decimals: 0, widths: [260, 140, 130, 100, 100, 130, 130, 110] };
   return { summary: summary, detail: detail, totals: { open: r2_(open), unapplied: r2_(un), overdue: r2_(tot[1] + tot[2] + tot[3] + tot[4]) } };
 }
 
 function generateAging() {
   const ui = SpreadsheetApp.getUi();
   const today = isoDate_(new Date());
-  const res = ui.prompt('Receivables and payables aging', 'As at which date? Enter YYYY-MM-DD, for example ' + today + '.\nOnly posted journals are included.', ui.ButtonSet.OK_CANCEL);
+  const res = ui.prompt(tr_('Receivables and payables aging', 'Umur piutang dan utang'),
+    tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.\nOnly posted journals are included.',
+      'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.\nHanya jurnal yang sudah diposting yang disertakan.'), ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
   let asOf;
-  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert('Enter the date as YYYY-MM-DD.'); return; }
+  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert(tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.')); return; }
   const s = readSettings_();
   const code = k => String(s[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim();
   const posted = loadPostedForReports_();
@@ -103,8 +117,10 @@ function generateAging() {
     const rep = agingReports_(agingBuild_(lines, d[0], asOf), d[0], asOf, meta);
     writeReport_(d[2] + ' Aging', rep.summary);
     writeReport_(d[2] + ' Open Items', rep.detail);
-    out.push((d[0] === 'AR' ? 'Receivables' : 'Payables') + ': open Rp ' + fmt_(rep.totals.open) + ', overdue Rp ' + fmt_(rep.totals.overdue) +
-      (rep.totals.unapplied ? ', unapplied payments Rp ' + fmt_(rep.totals.unapplied) : ''));
+    out.push((d[0] === 'AR' ? tr_('Receivables', 'Piutang') : tr_('Payables', 'Utang')) + tr_(': open Rp ', ': saldo belum lunas Rp ') + fmt_(rep.totals.open) +
+      tr_(', overdue Rp ', ', telah jatuh tempo Rp ') + fmt_(rep.totals.overdue) +
+      (rep.totals.unapplied ? tr_(', unapplied payments Rp ', ', pembayaran belum dialokasikan Rp ') + fmt_(rep.totals.unapplied) : ''));
   });
-  ui.alert('Aging as at ' + isoDate_(asOf), out.join('\n') + '\n\nSheets: AR Aging, AR Open Items, AP Aging, AP Open Items.', ui.ButtonSet.OK);
+  ui.alert(tr_('Aging as at ' + isoDate_(asOf), 'Umur pada ' + isoDate_(asOf)), out.join('\n') +
+    tr_('\n\nSheets: ', '\n\nLembar: ') + 'AR Aging, AR Open Items, AP Aging, AP Open Items' + '.', ui.ButtonSet.OK);
 }

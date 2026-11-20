@@ -40,8 +40,9 @@ function installInventorySheets_(ss, log) {
     styleHeader_(sh, ITEM_HEADERS.length);
     [110, 280, 80, 150, 140, 150, 90].forEach((w, i) => sh.setColumnWidth(i + 1, w));
     sh.getRange(2, 7, 500, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Active', 'Inactive'], true).build());
-    log.push('Created sheet "Items". Leave the account columns blank to use the defaults from Settings (inventory, COGS) and 5301.');
-  } else log.push('Items: kept as is.');
+    log.push(tr_('Created sheet "Items". Leave the account columns blank to use the defaults from Settings (inventory, COGS) and 5301.',
+      'Lembar "Items" telah dibuat. Biarkan kolom akun kosong untuk menggunakan nilai bawaan dari Pengaturan (persediaan, beban pokok penjualan) dan 5301.'));
+  } else log.push(tr_('Items: kept as is.', 'Items: tidak diubah.'));
   if (!ss.getSheetByName(INV.MOVES)) {
     const sh = ss.insertSheet(INV.MOVES);
     writeTable_(sh, MOVE_HEADERS, []);
@@ -52,8 +53,9 @@ function installInventorySheets_(ss, log) {
     sh.getRange(2, 5, 2000, 1).setNumberFormat('#,##0.00');
     sh.getRange(2, 9, 2000, 1).setNumberFormat('#,##0.00');
     sh.getRange(2, 11, 2000, 1).setNumberFormat('#,##0.00');
-    log.push('Created sheet "Stock Movements". Type in columns A to G. Columns H to M are filled by the system.');
-  } else log.push('Stock Movements: kept as is.');
+    log.push(tr_('Created sheet "Stock Movements". Type in columns A to G. Columns H to M are filled by the system.',
+      'Lembar "Stock Movements" telah dibuat. Isi kolom A sampai G. Kolom H sampai M diisi oleh sistem.'));
+  } else log.push(tr_('Stock Movements: kept as is.', 'Stock Movements: tidak diubah.'));
 }
 
 
@@ -79,18 +81,22 @@ function stockEngine_(items, rows, journalIds) {
   order.forEach(i => {
     const r = rows[i], o = res[i], t = STOCK_TYPES[String(r.type).toUpperCase()], it = items.get(r.item);
     const fail = m => { o.status = 'ERROR'; o.message = m; };
-    if (!it || !it.active) return fail('Item "' + r.item + '" is not in the Items sheet, or it is inactive.');
-    if (!t) return fail('Unknown type "' + r.type + '". Use one of: ' + Object.keys(STOCK_TYPES).join(', ') + '.');
-    if (!(r.qty > 0)) return fail('Enter a quantity above zero.');
-    if (!eff[i] && (lastDone.get(r.item) || 0) > r.date.getTime()) return fail('Dated before a movement of this item that was already processed. Use a later date.');
+    if (!it || !it.active) return fail(tr_('Item "' + r.item + '" is not in the Items sheet, or it is inactive.',
+      'Item "' + r.item + '" tidak ada di lembar Items atau tidak aktif.'));
+    if (!t) return fail(tr_('Unknown type "' + r.type + '". Use one of: ' + Object.keys(STOCK_TYPES).join(', ') + '.',
+      'Jenis "' + r.type + '" tidak dikenal. Gunakan salah satu dari: ' + Object.keys(STOCK_TYPES).join(', ') + '.'));
+    if (!(r.qty > 0)) return fail(tr_('Enter a quantity above zero.', 'Masukkan kuantitas lebih dari nol.'));
+    if (!eff[i] && (lastDone.get(r.item) || 0) > r.date.getTime()) return fail(tr_('Dated before a movement of this item that was already processed. Use a later date.',
+      'Tanggal lebih awal dari pergerakan item ini yang sudah diproses. Gunakan tanggal yang lebih kemudian.'));
     const st = state.get(r.item) || { qty: 0, value: 0 };
     const avg = st.qty > 0 ? st.value / st.qty : 0;
     let unit;
     if (t.cost === 'AVG') unit = avg;
     else if (r.unitCost !== null && r.unitCost >= 0) unit = r.unitCost;
     else if (t.cost === 'INPUT_OR_AVG' && avg > 0) unit = avg;
-    else return fail('Enter the unit cost.');
-    if (t.dir === 'OUT' && r.qty > st.qty + 1e-9) return fail('Not enough stock. On hand: ' + r2_(st.qty) + '.');
+    else return fail(tr_('Enter the unit cost.', 'Masukkan biaya satuan.'));
+    if (t.dir === 'OUT' && r.qty > st.qty + 1e-9) return fail(tr_('Not enough stock. On hand: ' + r2_(st.qty) + '.',
+      'Persediaan tidak mencukupi. Sisa di tangan: ' + r2_(st.qty) + '.'));
     const mv = r2_(r.qty * unit);
     if (t.dir === 'IN') { st.qty += r.qty; st.value += mv; }
     else { st.qty -= r.qty; st.value -= mv; if (st.qty < 1e-9) { st.qty = 0; if (Math.abs(st.value) < 1) st.value = 0; } }
@@ -99,11 +105,12 @@ function stockEngine_(items, rows, journalIds) {
     if (eff[i]) {
       o.status = 'DONE';
       if (t.journal && r.storedValue !== null && Math.abs(r.storedValue - mv) > 0.01) {
-        o.message = 'The cost is now ' + mv + ', but journal ' + r.journalId + ' used ' + r.storedValue + '. Review.';
+        o.message = tr_('The cost is now ' + mv + ', but journal ' + r.journalId + ' used ' + r.storedValue + '. Review.',
+          'Biaya sekarang ' + mv + ', tetapi jurnal ' + r.journalId + ' menggunakan ' + r.storedValue + '. Periksa kembali.');
       }
     } else { o.status = 'READY'; o.journal = t.journal; }
   });
-  rows.forEach((r, i) => { if (!r.date) { res[i].status = 'ERROR'; res[i].message = 'The date is not valid.'; } });
+  rows.forEach((r, i) => { if (!r.date) { res[i].status = 'ERROR'; res[i].message = tr_('The date is not valid.', 'Tanggal tidak valid.'); } });
   return { res: res, state: state };
 }
 
@@ -193,7 +200,8 @@ function processStockMovements() {
   const ui = SpreadsheetApp.getUi();
   const r = withLock_(() => {
     const items = readItems_(), rows = readMovements_();
-    if (!rows.length) throw new Error('The Stock Movements sheet has no rows. Type movements in columns A to G first.');
+    if (!rows.length) throw new Error(tr_('The Stock Movements sheet has no rows. Type movements in columns A to G first.',
+      'Lembar Stock Movements tidak memiliki baris. Isi pergerakan pada kolom A sampai G terlebih dahulu.'));
     const eng = stockEngine_(items, rows, journalIdSet_());
     const batchId = 'STK-' + Utilities.formatDate(new Date(), SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'yyyyMMdd-HHmmss');
     const jobs = [];
@@ -221,15 +229,19 @@ function processStockMovements() {
     sh.getRange(first, 8, out.length, 6).setValues(out);
     if (created) {
       const log = getRequiredSheet_(IMP.LOG), dates = jobs.filter((j, k) => made[k].id).map(j => rows[j.i].date).sort((a, b) => a - b);
-      log.getRange(Math.max(log.getLastRow() + 1, 2), 1, 1, LOG_HEADERS.length).setValues([[batchId, new Date(), getCurrentUser_(), 'Inventory movements', '', created, failed, STATUS.DRAFT, dates[0], dates[dates.length - 1]]]);
+      log.getRange(Math.max(log.getLastRow() + 1, 2), 1, 1, LOG_HEADERS.length).setValues([[batchId, new Date(), getCurrentUser_(), tr_('Inventory movements', 'Pergerakan persediaan'), '', created, failed, STATUS.DRAFT, dates[0], dates[dates.length - 1]]]);
     }
     const errors = eng.res.filter(o => o.status === 'ERROR').length;
     return { done: eng.res.filter(o => o.status === 'READY').length, created: created, errors: errors, batchId: batchId };
   });
-  ui.alert('Stock movements processed',
-    r.done + ' movement(s) processed.\n' + r.created + ' draft journal(s) created' + (r.created ? ' (batch ' + r.batchId + ')' : '') + '.\n' +
-    (r.errors ? r.errors + ' row(s) have an error. Read column M of the Stock Movements sheet, fix them, and process again.' : 'No errors.') +
-    (r.created ? '\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.' : ''), ui.ButtonSet.OK);
+  ui.alert(tr_('Stock movements processed', 'Pergerakan persediaan diproses'),
+    r.done + tr_(' movement(s) processed.\n', ' pergerakan diproses.\n') +
+    r.created + tr_(' draft journal(s) created', ' jurnal draf dibuat') +
+    (r.created ? tr_(' (batch ', ' (batch ') + r.batchId + ')' : '') + tr_('.\n', '.\n') +
+    (r.errors ? r.errors + tr_(' row(s) have an error. Read column M of the Stock Movements sheet, fix them, and process again.',
+      ' baris memiliki kesalahan. Baca kolom M pada lembar Stock Movements, perbaiki, lalu proses kembali.') : tr_('No errors.', 'Tidak ada kesalahan.')) +
+    (r.created ? tr_('\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.',
+      '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : ''), ui.ButtonSet.OK);
 }
 
 /** Pure: stock value per item and per inventory account as at a date, against the ledger. */
@@ -245,31 +257,40 @@ function stockSummaryRows_(items, rows, journalIds, asOf, ledgerByAccount) {
     perAcct.set(it.inv, (perAcct.get(it.inv) || 0) + st.value);
     total += st.value;
   });
-  lines.push({ k: 't', c: ['', 'Total stock value', '', '', '', r2_(total), ''] });
-  lines.push({ k: 'h', c: ['Agreement with the ledger'] });
+  lines.push({ k: 't', c: ['', tr_('Total stock value', 'Total nilai persediaan'), '', '', '', r2_(total), ''] });
+  lines.push({ k: 'h', c: [tr_('Agreement with the ledger', 'Kesesuaian dengan Buku Besar')] });
   const accts = new Set(Array.from(perAcct.keys()).concat(Object.keys(ledgerByAccount)));
   let bad = false;
   Array.from(accts).sort().forEach(a => {
     const sv = r2_(perAcct.get(a) || 0), lv = r2_(ledgerByAccount[a] || 0), diff = r2_(sv - lv);
     if (diff) bad = true;
-    lines.push({ k: diff ? 'x' : 'l', c: ['', 'Inventory account ' + a, '', '', '', sv, 'Ledger ' + lv + (diff ? ', difference ' + diff : ', agrees')] });
+    lines.push({ k: diff ? 'x' : 'l', c: ['', tr_('Inventory account ' + a, 'Akun persediaan ' + a), '', '', '', sv,
+      tr_('Ledger ' + lv + (diff ? ', difference ' + diff : ', agrees'), 'Buku Besar ' + lv + (diff ? ', selisih ' + diff : ', sesuai'))] });
   });
-  if (bad) lines.push({ k: 'n', c: ['', 'A difference usually means purchases were booked without a matching stock movement, journals are still drafts, or a cost was entered differently.'] });
+  if (bad) lines.push({ k: 'n', c: ['', tr_('A difference usually means purchases were booked without a matching stock movement, journals are still drafts, or a cost was entered differently.',
+    'Selisih biasanya berarti pembelian dicatat tanpa pergerakan persediaan yang sesuai, jurnal masih berupa draf, atau biaya dimasukkan dengan nilai yang berbeda.')] });
   return { rows: lines, total: r2_(total), balanced: !bad };
 }
 
 function generateStockSummary() {
   const ui = SpreadsheetApp.getUi();
   const today = isoDate_(new Date());
-  const res = ui.prompt('Stock summary', 'As at which date? Enter YYYY-MM-DD, for example ' + today + '.', ui.ButtonSet.OK_CANCEL);
+  const res = ui.prompt(tr_('Stock summary', 'Penilaian persediaan'),
+    tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.', 'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.'), ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
   let asOf;
-  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert('Enter the date as YYYY-MM-DD.'); return; }
+  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert(tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.')); return; }
   const items = readItems_(), ledger = {};
   const invAccts = new Set(Array.from(items.values()).map(i => i.inv));
   loadPostedForReports_().forEach(l => { if (invAccts.has(l.code) && l.date <= asOf) ledger[l.code] = (ledger[l.code] || 0) + l.debit - l.credit; });
   const out = stockSummaryRows_(items, readMovements_(), journalIdSet_(), asOf, ledger);
-  writeReport_('Stock Summary', { title: (readSettings_()['Company Name'] || '') + ' - Stock Summary', subtitle: 'As at ' + isoDate_(asOf) + '. Moving-average cost. Processed movements only.',
-    header: ['Item', 'Name', 'Unit', 'Quantity', 'Average cost', 'Stock value', 'Inventory account'], rows: out.rows, numFrom: 4, decimals: 2, widths: [110, 300, 80, 110, 120, 140, 340] });
-  ui.alert('Stock summary', 'Total stock value Rp ' + fmt_(out.total) + '.\nLedger agreement: ' + (out.balanced ? 'yes' : 'NO. See the bottom of the Stock Summary sheet.'), ui.ButtonSet.OK);
+  writeReport_('Stock Summary', { title: (readSettings_()['Company Name'] || '') + ' - ' + tr_('Stock Summary', 'Penilaian Persediaan'),
+    subtitle: tr_('As at ' + isoDate_(asOf) + '. Moving-average cost. Processed movements only.',
+      'Pada ' + isoDate_(asOf) + '. Biaya rata-rata bergerak. Hanya pergerakan yang sudah diproses.'),
+    header: [tr_('Item', 'Item'), tr_('Name', 'Nama'), tr_('Unit', 'Satuan'), tr_('Quantity', 'Kuantitas'), tr_('Average cost', 'Biaya Rata-rata'),
+      tr_('Stock value', 'Nilai Persediaan'), tr_('Inventory account', 'Akun Persediaan')],
+    rows: out.rows, numFrom: 4, decimals: 2, widths: [110, 300, 80, 110, 120, 140, 340] });
+  ui.alert(tr_('Stock summary', 'Penilaian persediaan'),
+    tr_('Total stock value Rp ', 'Total nilai persediaan Rp ') + fmt_(out.total) + tr_('.\nLedger agreement: ', '.\nKesesuaian dengan Buku Besar: ') +
+    (out.balanced ? tr_('yes', 'ya') : tr_('NO. See the bottom of the Stock Summary sheet.', 'TIDAK. Lihat bagian bawah lembar Stock Summary.')), ui.ButtonSet.OK);
 }

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root { --paper: #eef2ec; --sheet: #fff; --ink: #1d2a25; --muted: #5d6b65; --rule: #d2dcd1; --accent: #1f5c46; --accent-soft: #e2eee8; --danger: #a8322a; --warn: #8a5a00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--paper); color: var(--ink); font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  section { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; margin-top: 12px; }
+  .row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  input { padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; font: inherit; color: var(--ink); background: #fff; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { border: 1px solid transparent; border-radius: 3px; padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #fff; }
+  .outline { background: #fff; border-color: var(--accent); color: var(--accent); }
+  .quiet { background: #fff; border-color: #9fb0a4; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); background: #f4f7f3; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e8eee7; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .warn { color: var(--warn); font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+  .note { color: var(--muted); font-size: 12px; }
+  #message { white-space: pre-wrap; margin-top: 12px; min-height: 18px; }
+  #message.error { color: var(--danger); }
+  #message.success { color: var(--accent); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Alat Akhir Periode</h1>
+<p class="sub">Semua fungsi di sini membuat jurnal draf. Tinjau draf tersebut di Manajemen Draf, lalu posting setelah disetujui.</p>
+
+<section>
+  <div class="row">
+    <div><label for="month">Bulan</label><input type="month" id="month"></div>
+    <span class="note">Digunakan oleh penyusutan, jurnal pembalik, dan penutupan akhir tahun.</span>
+  </div>
+</section>
+
+<section>
+  <h2>Penyusutan</h2>
+  <p class="sub">Metode garis lurus, dari lembar Aset Tetap. Bulan yang telah dibukukan tidak dibukukan kembali, dan bulan yang terlewat akan disusul.</p>
+  <div class="row"><button class="outline" id="btnDepPreview" type="button">Pratinjau</button><button class="primary" id="btnDepCreate" type="button" disabled>Buat Jurnal Draf</button></div>
+  <div id="depBox"></div>
+</section>
+
+<section>
+  <h2>Jurnal Pembalik</h2>
+  <p class="sub">Pilih jurnal penyesuaian yang telah diposting pada bulan ini untuk dibalik (umumnya akrual). Pembalikannya bertanggal pada awal bulan berikutnya.</p>
+  <div class="row">
+    <button class="outline" id="btnAdjList" type="button">Daftar Jurnal Penyesuaian</button>
+    <div><label for="revDate">Tanggal Pembalikan</label><input type="date" id="revDate"></div>
+    <button class="primary" id="btnRevCreate" type="button" disabled>Buat Draf Pembalik</button>
+  </div>
+  <div id="adjBox"></div>
+  <div class="row" style="margin-top:14px">
+    <div><label for="oneId">Atau balik jurnal yang telah diposting berdasarkan ID-nya</label><input id="oneId" placeholder="JV-2026-00012"></div>
+    <button class="quiet" id="btnOne" type="button">Buat Draf Pembalik</button>
+  </div>
+</section>
+
+<section>
+  <h2>Penutupan Akhir Tahun</h2>
+  <p class="sub">Pilih bulan terakhir tahun buku. Akun laba rugi ditutup ke Ikhtisar Laba Rugi, kemudian ke Laba Ditahan. Penarikan pemilik dan dividen juga ditutup.</p>
+  <div class="row"><button class="outline" id="btnClosePreview" type="button">Pratinjau</button><button class="primary" id="btnCloseCreate" type="button" disabled>Buat Draf Penutupan</button></div>
+  <div id="closeBox"></div>
+</section>
+
+<section>
+  <h2>Tanggal Kunci</h2>
+  <p class="sub">Jurnal yang bertanggal pada atau sebelum tanggal ini tidak dapat diposting.</p>
+  <div class="row">
+    <div><label for="lockDate">Dikunci Hingga</label><input type="date" id="lockDate"></div>
+    <button class="primary" id="btnLock" type="button">Simpan</button>
+    <button class="quiet" id="btnUnlock" type="button">Hapus Kunci</button>
+  </div>
+</section>
+
+<div id="message" role="status" aria-live="polite"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n || 0).toLocaleString('id-ID');
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let busy = false;
+
+const MESSAGES = {
+  'The system is busy. Please try again in a moment.': 'Sistem sedang sibuk. Silakan coba lagi beberapa saat.',
+  'The lock date was cleared.': 'Tanggal kunci telah dihapus.',
+  'Enter the month as YYYY-MM, for example 2026-11.': 'Masukkan bulan dalam format YYYY-MM, misalnya 2026-11.',
+  'There is no depreciation to book for this month. Everything scheduled has already been booked.': 'Tidak ada penyusutan yang harus dibukukan pada bulan ini. Semua yang dijadwalkan telah dibukukan.',
+  'There is nothing to close: no profit and loss activity was found in this financial year.': 'Tidak ada yang ditutup: tidak ditemukan aktivitas laba rugi pada tahun buku ini.',
+  'The Income Summary and Retained Earnings accounts must exist in the COA and in Settings.': 'Akun Ikhtisar Laba Rugi dan Laba Ditahan harus ada di COA dan di Pengaturan.',
+  'Closing journals were already created for this year. Delete the draft closing journals first if you need to create them again.': 'Jurnal penutup untuk tahun ini telah dibuat. Hapus draf jurnal penutup terlebih dahulu jika Anda perlu membuatnya kembali.',
+  'Choose at least one journal.': 'Pilih minimal satu jurnal.'
+};
+
+function tr(t) {
+  const value = String(t == null ? '' : t);
+  if (MESSAGES[value]) return MESSAGES[value];
+  return value.split('\n').map(line => {
+    if (MESSAGES[line]) return MESSAGES[line];
+    return line
+      .replace(/^Journals dated on or before (.+) are locked\. Use a later date, or change the Lock Date in ACCOUNTING > Setup > Company Profile & Settings > System\.$/, 'Jurnal yang bertanggal pada atau sebelum $1 terkunci. Gunakan tanggal yang lebih akhir, atau ubah Tanggal Kunci di AKUNTANSI > Pengaturan > Profil & Pengaturan Perusahaan > Sistem.')
+      .replace(/^Journals dated on or before (\S+) can no longer be posted\.$/, 'Jurnal yang bertanggal pada atau sebelum $1 tidak dapat diposting lagi.')
+      .replace(/^Draft (\S+) created for (\d+) assets\. Review it in Draft Management, then post it\.$/, 'Draf $1 telah dibuat untuk $2 aset. Tinjau draf tersebut di Manajemen Draf, lalu posting.')
+      .replace(/^Closing entries are created for the last month of the financial year\. With your Fiscal Year Start Month that is month (\d+)\.$/, 'Jurnal penutup dibuat untuk bulan terakhir tahun buku. Dengan Bulan Mulai Tahun Buku yang Anda tetapkan, bulan tersebut adalah $1.')
+      .replace(/^Draft closing journals (.+) created\. Post the first one, then the second\.$/, 'Draf jurnal penutup $1 telah dibuat. Posting yang pertama, lalu yang kedua.')
+      .replace(/^(\d+) reversing draft\(s\) created: (.+)\. Post them in Draft Management\.$/, '$1 draf pembalik telah dibuat: $2. Posting draf tersebut di Manajemen Draf.')
+      .replace(/^(.+) is not posted\. Only posted journals can be reversed\. Edit or delete drafts instead\.$/, '$1 belum diposting. Hanya jurnal yang telah diposting yang dapat dibalik. Edit atau hapus draf sebagai gantinya.')
+      .replace(/^(.+) is itself a reversal\.$/, '$1 sendiri merupakan jurnal pembalik.')
+      .replace(/^(.+) has already been reversed\.$/, '$1 telah dibalik sebelumnya.')
+      .replace(/^(.+) was not found\.$/, '$1 tidak ditemukan.')
+      .replace(/^Asset "(.+)" was skipped: the Asset ID must not be empty or contain spaces\.$/, 'Aset "$1" dilewati: ID Aset tidak boleh kosong atau mengandung spasi.')
+      .replace(/^(.+) is marked Disposed but has no Disposal Date\. It was skipped\.$/, '$1 ditandai sebagai Dihapuskan tetapi tidak memiliki Tanggal Penghapusan. Aset ini dilewati.')
+      .replace(/^(.+) was skipped: check Cost, Useful Life, and the dates\.$/, '$1 dilewati: periksa Biaya Perolehan, Masa Manfaat, dan tanggal-tanggalnya.')
+      .replace(/^(.+) was skipped: the Residual Value must be below the Cost\.$/, '$1 dilewati: Nilai Sisa harus lebih rendah daripada Biaya Perolehan.')
+      .replace(/^(.+) was skipped: the depreciation expense or accumulated depreciation account is not in the COA\.$/, '$1 dilewati: akun beban penyusutan atau akumulasi penyusutan tidak ada di COA.');
+  }).join('\n');
+}
+function say(t, kind) { $('message').textContent = t ? tr(t) : ''; $('message').className = kind || ''; }
+function setBusy(v) { busy = v; document.querySelectorAll('button').forEach(b => { b.disabled = v; }); if (!v) refreshButtons(); }
+function refreshButtons() {
+  $('btnDepCreate').disabled = !(state.dep && state.dep.total > 0);
+  $('btnRevCreate').disabled = !document.querySelector('#adjBox input:checked');
+  $('btnCloseCreate').disabled = !(state.close && !state.close.existing);
+}
+const state = { dep: null, close: null };
+
+function call(fn, arg, ok, label) {
+  if (busy) return;
+  setBusy(true); say(label || 'Memproses...');
+  google.script.run
+    .withSuccessHandler(r => { setBusy(false); say(''); ok(r); })
+    .withFailureHandler(e => { setBusy(false); say(e.message || String(e), 'error'); })
+    [fn](arg);
+}
+function month() { if (!$('month').value) throw new Error('Pilih bulan terlebih dahulu.'); return $('month').value; }
+function nextMonthFirst(m) { const [y, mo] = m.split('-').map(Number); return (mo === 12 ? y + 1 : y) + '-' + String(mo === 12 ? 1 : mo + 1).padStart(2, '0') + '-01'; }
+$('month').addEventListener('change', () => { if ($('month').value) $('revDate').value = nextMonthFirst($('month').value); state.dep = null; state.close = null; $('depBox').innerHTML = ''; $('adjBox').innerHTML = ''; $('closeBox').innerHTML = ''; refreshButtons(); });
+
+$('btnDepPreview').addEventListener('click', () => {
+  try {
+    call('previewDepreciation', month(), r => {
+      state.dep = r;
+      $('depBox').innerHTML = (r.lines.length ? '<table><thead><tr><th>Aset</th><th class="num">Seharusnya Sampai Saat Ini</th><th class="num">Telah Dibukukan</th><th class="num">Akan Dibukukan Sekarang</th></tr></thead><tbody>' +
+        r.lines.map(l => `<tr><td>${esc(l.id)} ${esc(l.name)}</td><td class="num">${fmt(l.scheduled)}</td><td class="num">${fmt(l.posted)}</td><td class="num">${fmt(l.due)}</td></tr>`).join('') +
+        `<tr><td><b>Total</b></td><td></td><td></td><td class="num"><b>${fmt(r.total)}</b></td></tr></tbody></table>` : '<p class="note">Tidak ada aset untuk disusutkan. Tambahkan aset pada lembar Aset Tetap.</p>') +
+        (r.warnings.length ? '<div class="warn">' + esc(r.warnings.map(tr).join('\n')) + '</div>' : '');
+      refreshButtons();
+    }, 'Menghitung...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('btnDepCreate').addEventListener('click', () => {
+  try { call('createDepreciation', month(), r => { say(r.message, 'success'); state.dep = null; $('depBox').innerHTML = ''; refreshButtons(); }, 'Membuat draf...'); } catch (e) { say(e.message, 'error'); }
+});
+
+$('btnAdjList').addEventListener('click', () => {
+  try {
+    call('listAdjustingEntries', month(), list => {
+      $('adjBox').innerHTML = list.length ? '<table><thead><tr><th></th><th>Jurnal</th><th>Tanggal</th><th>Deskripsi</th><th class="num">Jumlah</th></tr></thead><tbody>' +
+        list.map(j => `<tr><td><input type="checkbox" value="${esc(j.id)}" ${j.reversed ? 'disabled' : ''}></td><td>${esc(j.id)}</td><td>${esc(j.date)}</td><td>${esc(j.description)}${j.reversed ? ' <span class="note">(telah dibalik)</span>' : ''}</td><td class="num">${fmt(j.total)}</td></tr>`).join('') + '</tbody></table>'
+        : '<p class="note">Tidak ada jurnal penyesuaian yang telah diposting (selain penyusutan) pada bulan ini.</p>';
+      refreshButtons();
+    }, 'Mencari...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('adjBox').addEventListener('change', refreshButtons);
+function reverse(ids) {
+  if (!$('revDate').value) { say('Masukkan tanggal pembalikan.', 'error'); return; }
+  call('createReversals', { ids: ids, date: $('revDate').value }, r => {
+    say(r.message + (r.errors.length ? '\n' + r.errors.join('\n') : ''), r.errors.length ? 'error' : 'success');
+    $('adjBox').innerHTML = ''; refreshButtons();
+  }, 'Membuat draf pembalik...');
+}
+$('btnRevCreate').addEventListener('click', () => reverse(Array.from(document.querySelectorAll('#adjBox input:checked')).map(c => c.value)));
+$('btnOne').addEventListener('click', () => { const id = $('oneId').value.trim(); if (!id) { say('Masukkan ID jurnal.', 'error'); return; } reverse([id]); });
+
+$('btnClosePreview').addEventListener('click', () => {
+  try {
+    call('previewClosing', month(), r => {
+      state.close = r;
+      $('closeBox').innerHTML = `<p>Tahun buku dari periode ${esc(r.from)}. ${r.accounts} akun laba rugi dan ${r.distributions} akun distribusi akan ditutup.<br>` +
+        `${r.profit >= 0 ? 'Laba' : 'Rugi'} untuk tahun ini: <b>Rp ${fmt(Math.abs(r.profit))}</b>.</p>` +
+        (r.existing ? '<div class="warn">Jurnal penutup untuk tahun ini sudah ada. Hapus drafnya terlebih dahulu untuk membuatnya kembali.</div>' : '') +
+        (r.draftsInYear ? `<div class="warn">${r.draftsInYear} draf jurnal bertanggal dalam tahun buku ini. Draf tersebut tidak termasuk dalam penutupan. Posting atau hapus terlebih dahulu, jika tidak penutupan menjadi tidak mutakhir.</div>` : '');
+      refreshButtons();
+    }, 'Menghitung...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('btnCloseCreate').addEventListener('click', () => {
+  try { call('createClosing', month(), r => { say(r.message, 'success'); state.close = null; $('closeBox').innerHTML = ''; refreshButtons(); }, 'Membuat draf penutupan...'); } catch (e) { say(e.message, 'error'); }
+});
+
+$('btnLock').addEventListener('click', () => { if (!$('lockDate').value) { say('Pilih tanggal batas kunci.', 'error'); return; } call('setLockDate', $('lockDate').value, r => say(r.message, 'success'), 'Menyimpan...'); });
+$('btnUnlock').addEventListener('click', () => call('setLockDate', '', r => { $('lockDate').value = ''; say(r.message, 'success'); }, 'Menyimpan...'));
+
+google.script.run.withSuccessHandler(s => { $('month').value = s.month; $('lockDate').value = s.lockDate; $('revDate').value = nextMonthFirst(s.month); })
+  .withFailureHandler(e => say(e.message || String(e), 'error')).getPeriodEndSetup();
+</script>
+</body>
+</html>

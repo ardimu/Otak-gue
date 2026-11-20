@@ -117,8 +117,9 @@ function installMasterData_(ss, log) {
 
 function readSheetValues_(name) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
+  if (!sh) return [];
+  const values = sh.getDataRange().getValues();
+  return values.length > 1 ? values.slice(1) : [];
 }
 
 function readParties_() {
@@ -160,7 +161,7 @@ function getTaxConfig_() {
 /** Quick add from the journal form. Names must be unique. */
 function addParty(payload) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const name = String(payload && payload.name || '').trim();
     const type = ['Customer', 'Supplier', 'Both'].includes(payload && payload.type) ? payload.type : 'Both';

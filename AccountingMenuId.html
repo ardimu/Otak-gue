@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?!= include('style'); ?>
+</head>
+<body>
+  <nav class="accounting-menu">
+    <div class="brand">AKUNTANSI</div>
+
+    <div class="group-title">TRANSAKSI &amp; INPUT</div>
+    <button class="menu-item" type="button" data-action="showJournalDialog">
+      <span class="icon">➕</span><span class="label">Jurnal Baru</span>
+    </button>
+    <button class="menu-item" type="button" data-action="showBankImport">
+      <span class="icon">📥</span><span class="label">Impor Bank &amp; Kas Kecil</span>
+    </button>
+    <button class="menu-item" type="button" data-action="showDraftManagement">
+      <span class="icon">📋</span><span class="label">Kelola Draf</span>
+    </button>
+
+    <div class="divider"></div>
+
+    <div class="group-title">PENUTUPAN &amp; PERIODE</div>
+    <button class="menu-item" type="button" data-action="showPeriodEnd">
+      <span class="icon">🗓️</span><span class="label">Alat Akhir Periode</span>
+    </button>
+
+    <div class="divider"></div>
+
+    <div class="group-title">LAPORAN &amp; ASET</div>
+    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="reports-submenu" data-submenu="reports-submenu">
+      <span class="icon">📊</span><span class="label">Laporan</span><span class="arrow">&gt;</span>
+    </div>
+    <div class="submenu" id="reports-submenu" hidden>
+      <button class="submenu-item" type="button" data-action="generateReports">Buat Laporan Bulanan...</button>
+      <button class="submenu-item" type="button" data-action="refreshReports">Perbarui Laporan (bulan yang sama)</button>
+      <button class="submenu-item" type="button" data-action="generateAging">Umur Piutang dan Utang...</button>
+    </div>
+    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="inventory-submenu" data-submenu="inventory-submenu">
+      <span class="icon">📦</span><span class="label">Persediaan</span><span class="arrow">&gt;</span>
+    </div>
+    <div class="submenu" id="inventory-submenu" hidden>
+      <button class="submenu-item" type="button" data-action="processStockMovements">Proses Mutasi Persediaan</button>
+      <button class="submenu-item" type="button" data-action="generateStockSummary">Ringkasan Persediaan...</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="group-title">SISTEM</div>
+    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="setup-submenu" data-submenu="setup-submenu">
+      <span class="icon">⚙️</span><span class="label">Pengaturan</span><span class="arrow">&gt;</span>
+    </div>
+    <div class="submenu" id="setup-submenu" hidden>
+      <button class="submenu-item" type="button" data-action="showCompanySettings">Profil &amp; Pengaturan Perusahaan</button>
+      <button class="submenu-item" type="button" data-action="installSystem">Instal / Perbarui Sistem</button>
+      <button class="submenu-item" type="button" data-action="runSetupCheck">Periksa Bagan Akun &amp; Pengaturan</button>
+      <button class="submenu-item" type="button" data-action="showUserGuide">Panduan Pengguna / SOP</button>
+      <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="language-submenu" data-submenu="language-submenu">
+        <span class="label">Bahasa</span><span class="arrow">&gt;</span>
+      </div>
+      <div class="submenu" id="language-submenu" hidden>
+        <button class="submenu-item" type="button" data-action="useLanguageEnglish">English</button>
+        <button class="submenu-item" type="button" data-action="useLanguageIndonesian">Bahasa Indonesia</button>
+        <button class="submenu-item" type="button" data-action="resetLanguage">Reset ke English</button>
+      </div>
+    </div>
+
+    <div class="status" id="status" hidden></div>
+  </nav>
+  <?!= include('scriptId.js'); ?>
+</body>
+</html>

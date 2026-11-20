@@ -573,11 +573,21 @@ function setAccountInput(id, code) { const a = accountByCode(code); $(id).value 
 const partyByName = n => parties.find(p => p.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
 const selectedMode = () => document.querySelector('input[name="entryMode"]:checked').value;
 const isSalesEngine = () => !!tpl && tpl.engine === 'SALES';
-const isOpening = () => $('journalType').value === 'Opening Entry';
+const isOpening = () => currentJournalType() === 'Opening Entry';
+const currentJournalType = () => typeof journalTypeValue === 'function' ? journalTypeValue($('journalType').value) : $('journalType').value;
+const accountAllowed = a => {
+  const scope = CFG && CFG.accountScopes ? CFG.accountScopes[currentJournalType()] : null;
+  return !scope || scope.includes(String(a.code));
+};
+const partyEligible = a => {
+  if (!a || !CFG || !CFG.partyAccountCodes) return false;
+  return (CFG.partyAccountCodes.Customer || []).concat(CFG.partyAccountCodes.Supplier || []).includes(String(a.code));
+};
 
 function fillLists() {
   ['coaAll', 'coaCash', 'partyList'].forEach(id => { $(id).innerHTML = ''; });
   accounts.forEach(a => {
+    if (!accountAllowed(a)) return;
     const o = document.createElement('option'); o.value = accountLabel(a);
     $('coaAll').appendChild(o);
     if (a.group === 'Cash & Cash Equivalents') $('coaCash').appendChild(o.cloneNode());
@@ -708,6 +718,8 @@ function updateCogsUi() {
 }
 function onJournalTypeUi() {
   const opening = isOpening();
+  fillLists();
+  document.querySelectorAll('#journalRows tr').forEach(syncPartyField);
   $('openingBar').classList.toggle('hidden', !opening);
   if (opening) {
     document.querySelectorAll('input[name="entryMode"]').forEach(el => { el.checked = el.value === 'MANUAL'; });
@@ -906,6 +918,13 @@ function showSummary(s) {
 }
 
 /* ---------- Journal lines table ---------- */
+function syncPartyField(tr) {
+  const party = tr.querySelector('.lparty');
+  const ok = partyEligible(accountFromInput(tr.querySelector('.account').value));
+  party.disabled = !ok;
+  party.placeholder = ok ? 'Optional' : 'Not applicable for this account';
+  if (!ok) party.value = '';
+}
 function addRow(pre) {
   pre = pre || {};
   const tr = document.createElement('tr');
@@ -925,8 +944,8 @@ function addRow(pre) {
   if (Number.isFinite(c) && c !== 0) credit.value = money(c);
   tr.dataset.taxMeta = JSON.stringify(pre.taxMeta || {});
   const edited = () => { linesEdited = true; };
-  account.addEventListener('input', () => { edited(); updateNormalWarning(tr); });
-  account.addEventListener('change', () => updateNormalWarning(tr));
+  account.addEventListener('input', () => { edited(); updateNormalWarning(tr); syncPartyField(tr); });
+  account.addEventListener('change', () => { updateNormalWarning(tr); syncPartyField(tr); });
   tr.querySelector('.lparty').addEventListener('input', edited);
   tr.querySelector('.ldesc').addEventListener('input', edited);
   debit.addEventListener('input', () => { edited(); if (parseMoney(debit.value) > 0) credit.value = ''; calculate(); });
@@ -937,11 +956,12 @@ function addRow(pre) {
   tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); edited(); calculate(); });
   $('journalRows').appendChild(tr);
   updateNormalWarning(tr);
+  syncPartyField(tr);
   return tr;
 }
 function renderLines(lines) {
   $('journalRows').innerHTML = '';
-  lines.forEach(x => addRow({ accountCode: x.accountCode, debit: x.debit, credit: x.credit, description: x.description, taxMeta: x.tax || {} }));
+  lines.forEach(x => addRow({ accountCode: x.accountCode, debit: x.debit, credit: x.credit, party: x.party || '', description: x.description, taxMeta: x.tax || {} }));
   calculate();
 }
 function normalSide(a) {
@@ -978,10 +998,12 @@ function collectLines() {
     if (opening && !dText && !cText) return;
     const a = accountFromInput(text);
     if (!a) throw new Error('Line ' + (i + 1) + ': select an account from the chart of accounts.');
+    if (!accountAllowed(a)) throw new Error('Line ' + (i + 1) + ': account ' + a.code + ' is not allowed in ' + currentJournalType() + '.');
     const d = parseMoney(dText), c = parseMoney(cText);
     if (!Number.isFinite(d) || !Number.isFinite(c) || d < 0 || c < 0) throw new Error('Line ' + (i + 1) + ': the amount is not valid.');
     if ((d > 0 && c > 0) || (d === 0 && c === 0)) throw new Error('Line ' + (i + 1) + ': enter either a Debit or a Credit amount.');
     const lp = row.querySelector('.lparty').value.trim();
+    if (lp && !partyEligible(a)) throw new Error('Line ' + (i + 1) + ': Customer / Supplier cannot be entered for account ' + a.code + '.');
     if (lp && !partyByName(lp)) throw new Error('Line ' + (i + 1) + ': "' + lp + '" is not in the Parties list. Use Add new first.');
     let meta = {}; try { meta = JSON.parse(row.dataset.taxMeta || '{}'); } catch (e) { meta = {}; }
     lines.push({
@@ -997,7 +1019,7 @@ function collectLines() {
 /* ---------- Opening balances ---------- */
 function loadBsAccounts() {
   const run = () => {
-    const bs = accounts.filter(a => ['ASSET', 'LIABILITY', 'EQUITY'].includes(a.type) && a.code !== CFG.mappings.openingEquity);
+    const bs = accounts.filter(a => accountAllowed(a) && ['ASSET', 'LIABILITY', 'EQUITY'].includes(a.type) && a.code !== CFG.mappings.openingEquity);
     renderLines(bs.map(a => ({ accountCode: a.code, description: 'Opening balance' })));
     linesEdited = true;
   };
@@ -1247,6 +1269,7 @@ function init() {
       CFG = cfg; accounts = cfg.accounts || []; parties = cfg.parties || []; TAX = cfg.tax || TAX;
       fillLists(); fillJournalTypes(cfg.journalTypes || []); fillTemplates(cfg.templates || []);
       $('journalType').value = 'General Journal';
+      onJournalTypeUi();
       $('pageSub').textContent = (cfg.company ? cfg.company + ', ' : '') + cfg.businessType.toLowerCase() + ' business. ' +
         accounts.length + ' active accounts, ' + parties.length + ' customers and suppliers.';
       onTemplateChange(); setButtons(false);

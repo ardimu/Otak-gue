@@ -62,6 +62,31 @@ function installBankSheets_(ss, log) {
   }
 }
 
+function normHeader_(v) {
+  return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function stagingPartyColumn_(sheet, values, headerIndex) {
+  const header = values[headerIndex] || [];
+  const found = header.findIndex(h => ['customer / supplier', 'customer/supplier', 'customer or supplier'].indexOf(normHeader_(h)) >= 0);
+  if (found >= 0) return found;
+  let last = 0;
+  values.forEach(r => r.forEach((v, i) => { if (String(v == null ? '' : v).trim()) last = Math.max(last, i + 1); }));
+  const col = last;
+  sheet.getRange(headerIndex + 1, col + 1).setValue('Customer / Supplier');
+  return col;
+}
+
+function bankPartyColumns_(header) {
+  const h = header.map(normHeader_);
+  const find = names => h.findIndex(x => names.indexOf(x) >= 0);
+  return {
+    both: find(['customer / supplier', 'customer/supplier', 'customer or supplier']),
+    customer: find(['customer', 'customer name', 'nama customer', 'nama pelanggan']),
+    supplier: find(['supplier', 'supplier name', 'nama supplier', 'nama pemasok'])
+  };
+}
+
 
 /* ============================================================
    PARSING (pure functions)
@@ -192,6 +217,13 @@ function isoDate_(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+function assertNotLockedWith_(date, lock) {
+  if (lock && date.getTime() <= lock.getTime()) {
+    throw new Error(`Journals dated on or before ${isoDate_(lock)} are locked. ` +
+      'Use a later date, or change the Lock Date in ACCOUNTING > Setup > Company Profile & Settings > System.');
+  }
+}
+
 /**
  * values = the staging sheet. ctx = { coaMap, rules, existing:Set, suspense }.
  * Returns { rows, skipped }. Rows with no readable date are counted as skipped (headers, totals, notes).
@@ -203,6 +235,7 @@ function parseBankSheet_(values, p, ctx) {
     acct: colIndex_(p.acctCol, header), out: colIndex_(p.outCol, header), in: colIndex_(p.inCol, header),
     amount: colIndex_(p.amountCol, header), dir: colIndex_(p.dirCol, header), bal: colIndex_(p.balCol, header)
   };
+  const partyCols = bankPartyColumns_(header);
   if (c.date < 0 || c.desc < 0) throw new Error('The profile needs a Date Column and a Description Column.');
   if (c.out < 0 && c.in < 0 && c.amount < 0) throw new Error('The profile needs Money Out / Money In columns, or an Amount column.');
   const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
@@ -223,6 +256,9 @@ function parseBankSheet_(values, p, ctx) {
     if (!row.out && !row.in) { skipped++; continue; }
 
     let acc = null, party = '';
+    const fromSheet = (partyCols.both >= 0 ? clean(r[partyCols.both]) : '') ||
+      (partyCols.customer >= 0 ? clean(r[partyCols.customer]) : '') ||
+      (partyCols.supplier >= 0 ? clean(r[partyCols.supplier]) : '');
     if (c.acct >= 0) {
       acc = findAccountByText_(r[c.acct], ctx.coaMap);
       if (!acc && clean(r[c.acct])) row.note = 'Account "' + clean(r[c.acct]) + '" is not in the COA.';
@@ -232,7 +268,7 @@ function parseBankSheet_(values, p, ctx) {
       if (m) { acc = ctx.coaMap.get(m.account) || null; party = m.party; if (!acc) row.note = 'Rule account ' + m.account + ' is not in the COA.'; }
     }
     if (!acc && ctx.suspense) { acc = ctx.coaMap.get(ctx.suspense) || null; if (acc) row.note = 'Suspense account'; }
-    if (acc) { row.accountCode = acc.code; row.accountName = acc.name; row.party = party; }
+    if (acc) { row.accountCode = acc.code; row.accountName = acc.name; row.party = fromSheet || party; }
 
     const bal = c.bal >= 0 ? clean(r[c.bal]) : '';
     const base = [p.account, row.date, (row.in - row.out).toFixed(2), row.desc.toUpperCase().slice(0, 60), bal].join('|');
@@ -247,7 +283,7 @@ function parseBankSheet_(values, p, ctx) {
 /** Turns reviewed rows into Journal sheet rows (2 lines each). allocId(dateObj) returns a journal ID. */
 function buildBankJournals_(rows, p, ctx, meta, allocId) {
   const sheetRows = [], errors = [];
-  let imported = 0;
+  let imported = 0, missingPartyLines = 0;
   const bank = ctx.coaMap.get(p.account);
   rows.forEach(r => {
     try {
@@ -260,15 +296,15 @@ function buildBankJournals_(rows, p, ctx, meta, allocId) {
       if (counter.code === bank.code) throw new Error('The counter account cannot be the bank account itself.');
       let party = null;
       if (r.party) {
-        party = ctx.parties.get(String(r.party).toLowerCase());
-        if (!party) throw new Error('"' + r.party + '" is not in the Parties sheet.');
+        const name = String(r.party).trim();
+        party = ctx.parties.get(name.toLowerCase()) || { id: '', name: name };
       }
       const lines = isIn ? [[bank, amt, 0], [counter, 0, amt]] : [[counter, amt, 0], [bank, 0, amt]];
       const bothCash = counter.group === 'Cash & Cash Equivalents' && p.mode === 'BANK';
       const jtype = bothCash ? 'Fund Transfer' : (isIn ? 'Cash Receipt Journal' : 'Cash Disbursement Journal');
       if (meta.status === STATUS.POSTED) {
-        assertNotLocked_(date);
-        requirePartyOnArAp_(lines.map(l => ({ accountCode: l[0].code, partyId: party ? party.id : '' })));
+        assertNotLockedWith_(date, ctx.lockDate);
+        missingPartyLines += countMissingParty_(lines.map(l => ({ accountCode: l[0].code, partyId: party ? party.id : '' })), ctx.settings);
       }
       const id = allocId(date);
       lines.forEach((l, i) => {
@@ -288,7 +324,7 @@ function buildBankJournals_(rows, p, ctx, meta, allocId) {
       errors.push('Row ' + (r.n || '?') + ': ' + e.message);
     }
   });
-  return { sheetRows: sheetRows, errors: errors, imported: imported };
+  return { sheetRows: sheetRows, errors: errors, imported: imported, missingPartyLines: missingPartyLines };
 }
 
 
@@ -325,14 +361,17 @@ function importContext_() {
   if (sh.getLastRow() >= 2) {
     sh.getRange(2, COL.importKey + 1, sh.getLastRow() - 1, 1).getValues().forEach(r => { if (r[0]) existing.add(String(r[0])); });
   }
-  const suspense = String(readSettings_()['Bank Suspense Account'] || '').trim();
+  const settings = readSettings_();
+  const suspense = String(settings['Bank Suspense Account'] || '').trim();
   const parties = new Map(readParties_().filter(x => x.active).map(x => [x.name.toLowerCase(), x]));
-  return { coaMap: coaMap, rules: readImportRules_(), existing: existing, suspense: suspense, parties: parties };
+  return { coaMap: coaMap, rules: readImportRules_(), existing: existing, suspense: suspense, parties: parties,
+    settings: settings, lockDate: getLockDate_() };
 }
 
-function allocateIds_(sheet, count, dateOf) {
+function allocateIds_(sheet, settings) {
   const props = PropertiesService.getDocumentProperties();
-  const practiceEmpty = sheet.getLastRow() < 2 && getCompanyMode_() === 'PRACTICE';
+  const mode = settings ? (String(settings.Mode || '').trim().toUpperCase() === 'LIVE' ? 'LIVE' : 'PRACTICE') : getCompanyMode_();
+  const live = mode === 'LIVE';
   const maxByYear = {};
   if (sheet.getLastRow() >= 2) {
     sheet.getRange(2, COL.id + 1, sheet.getLastRow() - 1, 1).getDisplayValues().forEach(r => {
@@ -343,11 +382,18 @@ function allocateIds_(sheet, count, dateOf) {
   const touched = {};
   const next = date => {
     const y = String(date.getFullYear());
-    if (touched[y] === undefined) touched[y] = practiceEmpty ? 0 : Math.max(maxByYear[y] || 0, Number(props.getProperty('JOURNAL_SEQ_' + y) || 0));
+    if (touched[y] === undefined) {
+      const stored = live ? Number(props.getProperty('JOURNAL_SEQ_' + y) || 0) : 0;
+      touched[y] = Math.max(maxByYear[y] || 0, stored);
+      if (!live) props.deleteProperty('JOURNAL_SEQ_' + y);
+    }
     touched[y]++;
     return 'JV-' + y + '-' + String(touched[y]).padStart(5, '0');
   };
-  const save = () => Object.keys(touched).forEach(y => props.setProperty('JOURNAL_SEQ_' + y, String(touched[y])));
+  const save = () => {
+    if (!live) return;
+    Object.keys(touched).forEach(y => props.setProperty('JOURNAL_SEQ_' + y, String(touched[y])));
+  };
   return { next: next, save: save };
 }
 
@@ -357,9 +403,10 @@ function allocateIds_(sheet, count, dateOf) {
 ============================================================ */
 
 function showBankImport() {
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('BankImport').setWidth(1180).setHeight(760),
-    'Bank & Petty Cash Import');
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'BankImportId' : 'BankImport').setWidth(1180).setHeight(760),
+    indonesian ? 'Impor Bank & Kas Kecil' : 'Bank & Petty Cash Import');
 }
 
 function getBankSetup() {
@@ -383,47 +430,79 @@ function previewBankImport(profileName) {
   const p = readImportProfile_(profileName);
   const ctx = importContext_();
   if (!ctx.coaMap.get(p.account)) throw new Error(`The profile account ${p.account} is not in the COA.`);
-  const values = getRequiredSheet_(IMP.STAGING).getDataRange().getValues();
+  const staging = getRequiredSheet_(IMP.STAGING);
+  const values = staging.getDataRange().getValues();
   if (values.length <= p.headerRow || values.every(r => r.every(x => String(x).trim() === ''))) {
     throw new Error('The "Bank Import" sheet is empty. Paste the statement there first, starting at cell A1 (Paste special > Values only).');
   }
   const res = parseBankSheet_(values, p, ctx);
+  stagingPartyColumn_(staging, values, Math.max(0, p.headerRow - 1));
   return { rows: res.rows, skipped: res.skipped, bank: p.account, mode: p.mode };
 }
 
 function importBankRows(payload) {
+  const rawRows = Array.isArray(payload.rows) ? payload.rows : [];
+  const uploadStart = Date.now();
+  console.log('Upload start: ' + rawRows.length + ' rows');
+  if (!rawRows.length) {
+    console.log('Bank Upload: ' + (Date.now() - uploadStart) + 'ms for 0 rows');
+    throw new Error(tr_('There is nothing new to import.', 'Tidak ada baris baru untuk diimpor.'));
+  }
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const p = readImportProfile_(payload.profile);
     const status = payload.mode === 'POST' ? STATUS.POSTED : STATUS.DRAFT;
     const ctx = importContext_();
     if (!ctx.coaMap.get(p.account)) throw new Error(`The profile account ${p.account} is not in the COA.`);
-    const rows = (Array.isArray(payload.rows) ? payload.rows : []).filter(r => !ctx.existing.has(String(r.key)));
-    if (!rows.length) throw new Error('There is nothing new to import.');
+    const rows = rawRows.filter(r => !ctx.existing.has(String(r.key)));
+    if (!rows.length) throw new Error(tr_('There is nothing new to import.', 'Tidak ada baris baru untuk diimpor.'));
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
     const now = new Date(), user = getCurrentUser_();
     const batchId = 'BI-' + Utilities.formatDate(now, SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'yyyyMMdd-HHmmss');
-    const ids = allocateIds_(sheet);
+    const ids = allocateIds_(sheet, ctx.settings);
     const built = buildBankJournals_(rows, p, ctx, { status: status, batchId: batchId, now: now, user: user }, ids.next);
     if (!built.sheetRows.length) throw new Error('No row could be imported.\n' + built.errors.slice(0, 10).join('\n'));
 
-    const start = Math.max(sheet.getLastRow() + 1, 2), width = JOURNAL_HEADERS.length;
+    const start = Math.max(sheet.getLastRow() + 1, 2);
     const needed = start + built.sheetRows.length - 1;
     if (needed > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), needed - sheet.getMaxRows());
-    sheet.getRange(start, 1, built.sheetRows.length, width).setValues(built.sheetRows);
+    writeJournalRows_(sheet, built.sheetRows, start);
     ids.save();
     SpreadsheetApp.flush();
+    if (built.missingPartyLines) console.warn('Post: ' + built.missingPartyLines + ' lines posted without Customer / Supplier');
 
     const dates = built.sheetRows.map(r => r[COL.date]).sort((a, b) => a - b);
     const log = getRequiredSheet_(IMP.LOG);
     log.getRange(Math.max(log.getLastRow() + 1, 2), 1, 1, LOG_HEADERS.length).setValues([[
       batchId, now, user, p.name, p.account, built.imported, rows.length - built.imported, status,
       dates[0], dates[dates.length - 1]]]);
+    const durationMs = Date.now() - uploadStart;
+    console.log('Bank Upload: ' + durationMs + 'ms for ' + rawRows.length + ' rows');
     return { batchId: batchId, imported: built.imported, skipped: rows.length - built.imported,
-      status: status, errors: built.errors.slice(0, 15) };
+      status: status, errors: built.errors.slice(0, 15), successCount: built.imported,
+      failedCount: rows.length - built.imported, durationMs: durationMs };
+  } catch (e) {
+    console.log('Upload failed: ' + e.message);
+    throw e;
   } finally {
     lock.releaseLock();
+  }
+}
+
+function writeJournalRows_(sheet, rows, start) {
+  const width = JOURNAL_HEADERS.length;
+  const chunk = rows.length > 500 ? 200 : rows.length;
+  const written = [];
+  try {
+    for (let i = 0; i < rows.length; i += chunk) {
+      const size = Math.min(chunk, rows.length - i);
+      sheet.getRange(start + i, 1, size, width).setValues(rows.slice(i, i + size));
+      written.push({ row: start + i, size: size });
+    }
+  } catch (e) {
+    written.forEach(w => sheet.getRange(w.row, 1, w.size, width).clearContent());
+    throw e;
   }
 }
 
@@ -432,18 +511,40 @@ function getImportBatches() {
   if (!sh || sh.getLastRow() < 2) return [];
   const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
   const f = (v, p) => (v instanceof Date ? Utilities.formatDate(v, tz, p) : String(v || ''));
-  return sh.getRange(2, 1, sh.getLastRow() - 1, LOG_HEADERS.length).getValues().reverse().slice(0, 15).map(r => ({
+  const batches = sh.getRange(2, 1, sh.getLastRow() - 1, LOG_HEADERS.length).getValues().reverse().slice(0, 15).map(r => ({
     batchId: String(r[0]), at: f(r[1], 'dd MMM yyyy HH:mm'), profile: String(r[3]), imported: Number(r[5]) || 0,
-    status: String(r[7]), from: f(r[8], 'dd MMM yyyy'), to: f(r[9], 'dd MMM yyyy')
+    status: String(r[7]), from: f(r[8], 'dd MMM yyyy'), to: f(r[9], 'dd MMM yyyy'), missingParty: 0, missingRows: []
   }));
+  const byBatch = new Map(batches.map(b => [b.batchId, b]));
+  const settings = readSettings_();
+  const codes = ['ar', 'ap'].map(k => String(settings[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim());
+  const jsh = getRequiredSheet_(SHEETS.JOURNAL);
+  if (jsh.getLastRow() >= 2) {
+    jsh.getRange(2, 1, jsh.getLastRow() - 1, JOURNAL_HEADERS.length).getValues().forEach((r, i) => {
+      const b = byBatch.get(String(r[COL.batchId]));
+      if (!b || String(r[COL.status]) !== STATUS.DRAFT) return;
+      if (!codes.includes(String(r[COL.accountCode]).trim()) || String(r[COL.partyId] || '').trim()) return;
+      b.missingParty++;
+      const debit = Number(r[COL.debit]) || 0, credit = Number(r[COL.credit]) || 0;
+      const amount = debit > 0 ? debit : credit;
+      const label = debit > 0 ? 'No Supplier' : 'No Customer';
+      const desc = String(r[COL.lineDescription] || r[COL.description] || '');
+      b.missingRows.push('Row ' + (i + 2) + ' - ' + desc + ' Rp ' + fmt_(amount) + ' - ' + label);
+    });
+  }
+  return batches;
 }
 
 function setLogStatus_(batchId, status) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(IMP.LOG);
   if (!sh || sh.getLastRow() < 2) return;
-  sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach((r, i) => {
-    if (String(r[0]) === batchId) sh.getRange(i + 2, 8).setValue(status);
+  const ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  const col = sh.getRange(2, 8, sh.getLastRow() - 1, 1).getValues();
+  let changed = false;
+  ids.forEach((r, i) => {
+    if (String(r[0]) === batchId && String(col[i][0]) !== status) { col[i][0] = status; changed = true; }
   });
+  if (changed) sh.getRange(2, 8, col.length, 1).setValues(col);
 }
 
 function batchRows_(sheet, batchId) {
@@ -458,19 +559,21 @@ function batchRows_(sheet, batchId) {
 /** Posts every draft journal of an import batch. All-or-nothing: one invalid journal stops the whole batch. */
 function postImportBatch(batchId) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
     const found = batchRows_(sheet, batchId);
     if (!found.rows.length) throw new Error('Batch ' + batchId + ' was not found.');
     if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) throw new Error('Batch ' + batchId + ' has journals that are not drafts.');
-    const coaMap = getCoaMap_(), byId = {};
+    const coaMap = getCoaMap_(), settings = readSettings_(), byId = {};
+    let missingPartyLines = 0;
     found.rows.forEach(r => { (byId[r[COL.id]] = byId[r[COL.id]] || []).push({
       accountCode: String(r[COL.accountCode]).trim(), debit: Number(r[COL.debit] || 0), credit: Number(r[COL.credit] || 0),
       partyId: String(r[COL.partyId] || '') }); });
     Object.keys(byId).forEach(id => {
-      try { validateLines_(byId[id], coaMap, true); requirePartyOnArAp_(byId[id]); }
+      try { validateLines_(byId[id], coaMap, true); }
       catch (e) { throw new Error('Journal ' + id + ': ' + e.message + '\nNothing was posted.'); }
+      missingPartyLines += countMissingParty_(byId[id], settings);
     });
     found.rows.forEach(r => assertNotLocked_(parseLocalDate_(r[COL.date])));
     const now = new Date(), user = getCurrentUser_();
@@ -478,7 +581,8 @@ function postImportBatch(batchId) {
     writeRowGroups_(sheet, found.numbers, found.rows);
     SpreadsheetApp.flush();
     setLogStatus_(batchId, STATUS.POSTED);
-    return { message: Object.keys(byId).length + ' journals of batch ' + batchId + ' posted.' };
+    if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
+    return { message: tr_(Object.keys(byId).length + ' journals of batch ' + batchId + ' posted.', Object.keys(byId).length + ' jurnal dari batch ' + batchId + ' telah diposting.') };
   } finally {
     lock.releaseLock();
   }
@@ -486,7 +590,7 @@ function postImportBatch(batchId) {
 
 function deleteImportBatch(batchId) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
     const found = batchRows_(sheet, batchId);
@@ -502,7 +606,7 @@ function deleteImportBatch(batchId) {
     }
     SpreadsheetApp.flush();
     setLogStatus_(batchId, 'DELETED');
-    return { message: 'Batch ' + batchId + ' deleted (' + found.rows.length + ' lines).' };
+    return { message: tr_('Batch ' + batchId + ' deleted (' + found.rows.length + ' lines).', 'Batch ' + batchId + ' dihapus (' + found.rows.length + ' baris).') };
   } finally {
     lock.releaseLock();
   }

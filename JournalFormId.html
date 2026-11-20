@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #eef2ec; --sheet: #ffffff; --ink: #1d2a25; --muted: #5d6b65;
+    --rule: #d2dcd1; --rule-strong: #9fb0a4; --accent: #1f5c46; --accent-soft: #e2eee8;
+    --danger: #a8322a; --danger-soft: #f8e6e4; --warn: #8a5a00;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; background: var(--paper); color: var(--ink);
+    font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  }
+  .sheet {
+    max-width: 1040px; margin: 0 auto; background: var(--sheet);
+    border: 1px solid var(--rule); border-radius: 3px; padding: 22px 28px 26px;
+  }
+  header.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 14px; }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 3px 0 0; }
+  .badge {
+    padding: 4px 10px; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 3px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .mode-banner {
+    padding: 8px 12px; margin-bottom: 14px; border-radius: 3px;
+    font-size: 12px; font-weight: 600; background: var(--warn-soft, #fff3cd); color: var(--warn);
+  }
+  .mode-banner.live { background: var(--accent-soft); color: var(--accent); }
+  section { border-top: 1px solid var(--rule); padding: 16px 0; }
+  .grid { display: grid; gap: 12px 14px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: 1fr 1fr 1fr; }
+  .g4 { grid-template-columns: 1fr 1fr 1.4fr 1.4fr; }
+  .field { margin-bottom: 0; }
+  .grid + .grid, .grid + .field, .field + .grid { margin-top: 12px; }
+  label { display: block; margin-bottom: 4px; font-weight: 500; }
+  input, select {
+    width: 100%; padding: 8px 9px; border: 1px solid #b7c6ba; border-radius: 3px;
+    background: #fff; color: var(--ink); font: inherit;
+  }
+  input:focus, select:focus, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  input[type=checkbox], input[type=radio] { width: auto; padding: 0; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .hidden { display: none !important; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .between { justify-content: space-between; }
+
+  .seg { display: inline-flex; border: 1px solid var(--accent); border-radius: 3px; overflow: hidden; }
+  .seg label { margin: 0; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { display: block; padding: 7px 18px; color: var(--accent); font-weight: 500; }
+  .seg input:checked + span { background: var(--accent); color: #fff; }
+  .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .assist {
+    background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 16px 18px; margin: 4px 0 16px;
+  }
+  .assist h2 { margin-bottom: 10px; }
+  .assist .block + .block { border-top: 1px solid #c3d6cb; margin-top: 16px; padding-top: 16px; }
+  .option { margin-top: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; cursor: pointer; }
+  .option .inner { margin: 10px 0 0 24px; }
+
+  button {
+    border: 1px solid transparent; border-radius: 3px; padding: 8px 14px;
+    font: inherit; font-weight: 500; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #fff; }
+  .outline { background: #fff; border-color: var(--accent); color: var(--accent); }
+  .quiet { background: #fff; border-color: var(--rule-strong); color: var(--ink); }
+  .remove { background: transparent; color: var(--danger); padding: 4px 9px; font-size: 16px; line-height: 1; }
+  .genbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 14px; }
+  .genbar .check { font-weight: 400; }
+  #genHint { color: var(--warn); font-size: 12px; }
+
+  .summary { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 26px; font-variant-numeric: tabular-nums; }
+  .summary div span { color: var(--muted); margin-right: 6px; }
+
+  .ledger { overflow-x: auto; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  th { text-align: left; font-weight: 600; padding: 8px 6px; border-bottom: 3px double var(--rule-strong); }
+  th.num { text-align: right; }
+  td { padding: 6px; border-bottom: 1px solid #e5ece4; vertical-align: top; }
+  td input.amount { text-align: right; font-variant-numeric: tabular-nums; min-width: 130px; }
+  td .account { min-width: 260px; }
+  .warn { color: var(--warn); font-size: 11px; margin-top: 3px; }
+  .foot {
+    display: flex; justify-content: flex-end; align-items: baseline; gap: 34px;
+    border-top: 3px double var(--rule-strong); padding: 10px 6px 0; margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .foot .t span { display: block; color: var(--muted); font-size: 12px; text-align: right; }
+  .foot .t strong { font-size: 16px; }
+  #balanceStatus { margin-top: 10px; padding: 8px 10px; border-radius: 3px; font-weight: 500; }
+  #balanceStatus.ok { background: var(--accent-soft); color: var(--accent); }
+  #balanceStatus.bad { background: var(--danger-soft); color: var(--danger); }
+  #balanceStatus.idle { background: #f2f5f1; color: var(--muted); }
+
+  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  #message { white-space: pre-wrap; margin-top: 12px; min-height: 18px; }
+  #message.error { color: var(--danger); }
+  #message.success { color: var(--accent); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 14px; }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(20, 30, 26, .45);
+    display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
+  }
+  .dialog { width: 100%; max-width: 440px; background: #fff; border-radius: 4px; padding: 22px; }
+  .dialog h3 { margin: 0 0 10px; font-size: 16px; }
+  .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; line-height: 1.6; }
+  .dialog .row { justify-content: flex-end; margin-top: 20px; }
+
+  @media (max-width: 760px) {
+    .g2, .g3, .g4 { grid-template-columns: 1fr; }
+    .sheet { padding: 16px; }
+  }
+  .row > input { flex: 1; }
+  .quiet.small, .outline.small { padding: 7px 12px; }
+  td .lparty { min-width: 150px; }
+  .assist select, .assist input { background: #fff; }
+</style>
+</head>
+<body>
+<datalist id="coaAll"></datalist>
+<datalist id="coaCash"></datalist>
+<datalist id="partyList"></datalist>
+
+<div class="sheet">
+  <div class="mode-banner" id="modeBanner"></div>
+
+  <header class="top">
+    <div>
+      <h1 id="pageTitle">Entri Jurnal Baru</h1>
+      <p class="sub" id="pageSub">Memuat Bagan Akun Anda...</p>
+    </div>
+    <div id="idBadge" class="badge hidden"></div>
+  </header>
+
+  <section>
+    <h2>Informasi Jurnal</h2>
+    <div class="grid g4">
+      <div class="field"><label for="date">Tanggal Transaksi</label><input type="date" id="date"></div>
+      <div class="field"><label for="journalType">Jenis Jurnal</label><select id="journalType"></select></div>
+      <div class="field"><label for="reference">Nomor Referensi</label><input id="reference" placeholder="Nomor faktur atau bukti"></div>
+      <div class="field"><label for="dueDate">Tanggal Jatuh Tempo</label><input type="date" id="dueDate"></div>
+    </div>
+    <div class="grid g3">
+      <div class="field">
+        <label for="party" id="partyLabel">Pelanggan atau Pemasok</label>
+        <div class="row"><input id="party" list="partyList" placeholder="Pilih dari Daftar Pihak"><button type="button" class="quiet small" id="btnAddParty">Tambah Baru</button></div>
+      </div>
+      <div class="field">
+        <label for="documentSource">Dokumen Pendukung</label>
+        <select id="documentSource">
+          <option value="">Pilih dokumen</option>
+          <option value="Supplier Invoice">Faktur Pemasok</option><option value="Customer Invoice">Faktur Pelanggan</option><option value="Bank Statement">Laporan Bank</option>
+          <option value="Cash Voucher">Bukti Kas</option><option value="Receipt">Kuitansi</option><option value="Tax Invoice (Faktur Pajak)">Faktur Pajak</option>
+          <option value="Withholding Tax Slip (Bukti Potong)">Bukti Potong PPh</option><option value="Internal Memo">Memo Internal</option><option value="Other">Lainnya</option>
+        </select>
+      </div>
+      <div class="field"><label for="taxDocNo">Nomor Dokumen Pajak</label><input id="taxDocNo" placeholder="Nomor Faktur Pajak atau Bukti Potong"></div>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr">
+      <div class="field"><label for="description">Keterangan</label><input id="description" placeholder="Contoh: Pembelian bahan baku dari PT ABC"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="row between">
+      <div>
+        <h2 style="margin:0">Mode Entri</h2>
+        <p class="sub" id="modeHelp">Masukkan akun dan jumlah sendiri.</p>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Mode Entri">
+        <label><input type="radio" name="entryMode" value="MANUAL" checked><span>Manual</span></label>
+        <label><input type="radio" name="entryMode" value="ASSISTED"><span>Terbantu</span></label>
+      </div>
+    </div>
+  </section>
+
+  <section id="openingBar" class="hidden">
+    <h2>Saldo Awal</h2>
+    <p class="sub">Masukkan saldo setiap akun pada awal periode. Baris tanpa jumlah akan diabaikan.
+      Untuk piutang dan utang, tambahkan satu baris per pelanggan atau pemasok dan isi kolom Pelanggan / Pemasok.</p>
+    <div class="genbar">
+      <button type="button" class="outline" id="btnLoadBs">Muat semua akun neraca</button>
+      <button type="button" class="outline" id="btnPlug">Seimbangkan dengan Ekuitas Saldo Awal</button>
+    </div>
+  </section>
+
+  <div id="assisted" class="assist hidden">
+    <div class="block">
+      <h2>Transaksi</h2>
+      <div class="field">
+        <label for="template">Apa yang Anda catat?</label>
+        <select id="template"></select>
+        <div class="hint" id="templateHint"></div>
+      </div>
+
+      <div id="txnBlock" style="margin-top:12px">
+        <div class="grid g2">
+          <div class="field" id="categoryField">
+            <label for="transactionCategory">Kategori</label>
+            <select id="transactionCategory">
+              <option value="GOODS">Barang</option><option value="SERVICES">Jasa</option>
+              <option value="RENTAL">Sewa</option><option value="OTHER">Lainnya</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="baseAccount" id="baseLabel">Akun</label>
+            <input id="baseAccount" list="coaAll" placeholder="Ketik kode atau nama akun">
+            <div class="hint" id="baseHint"></div>
+          </div>
+        </div>
+        <div class="grid g3">
+          <div class="field"><label for="amount" id="amountLabel">Jumlah (Rp)</label><input id="amount" class="money" inputmode="decimal" placeholder="0"></div>
+          <div class="field">
+            <label for="amountBasis">Jumlah tersebut</label>
+            <select id="amountBasis">
+              <option value="BEFORE">Sebelum pajak</option>
+              <option value="INCL_VAT">Termasuk PPN</option>
+              <option value="NET">Bersih setelah pajak (kas yang benar-benar dibayar atau diterima)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="paymentMethod">Pembayaran</label>
+            <select id="paymentMethod">
+              <option value="CASH_BANK">Dibayar penuh (kas atau bank)</option>
+              <option value="CREDIT">Secara kredit (belum dibayar)</option>
+              <option value="PARTIAL">Dibayar sebagian</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid g2">
+          <div class="field" id="paymentAccountField"><label for="paymentAccount" id="paymentAccountLabel">Akun kas atau bank</label><input id="paymentAccount" list="coaCash" placeholder="Ketik kode atau nama akun"></div>
+          <div class="field hidden" id="paymentAmountField"><label for="paymentAmount" id="paymentAmountLabel">Jumlah dibayar sekarang (Rp)</label><input id="paymentAmount" class="money" inputmode="decimal" placeholder="0"></div>
+        </div>
+        <div id="cogsBox" class="option hidden">
+          <label class="check"><input type="checkbox" id="cogsEnabled"> Catat juga Harga Pokok Penjualan (persediaan perpetual)</label>
+          <div id="cogsFields" class="inner hidden" style="max-width:320px">
+            <label for="cogsAmount">Harga Pokok Penjualan (Rp)</label>
+            <input id="cogsAmount" class="money" inputmode="decimal" placeholder="0">
+          </div>
+        </div>
+      </div>
+
+      <div id="dslBlock" class="hidden" style="margin-top:12px">
+        <div class="grid g2" id="dslSlots"></div>
+        <div class="grid g3" id="dslInputs"></div>
+      </div>
+
+      <div class="genbar">
+        <button type="button" class="primary" id="btnGenerate">Buat baris jurnal</button>
+        <label class="check"><input type="checkbox" id="autoGen" checked> Jaga sinkronisasi baris saat saya mengubah kolom ini</label>
+        <span id="genHint" role="status"></span>
+      </div>
+      <div id="summary" class="summary hidden"></div>
+    </div>
+
+    <div class="block" id="taxBlock">
+      <h2>Pajak <span class="sub" style="font-weight:400">(opsional, termasuk dalam baris)</span></h2>
+
+      <div class="option" id="vatBlock">
+        <label class="check"><input type="checkbox" id="vatEnabled"> Transaksi ini mencakup PPN</label>
+        <div id="vatFields" class="inner hidden">
+          <div class="grid g2">
+            <div class="field">
+              <label for="vatMode">Tarif PPN</label>
+              <select id="vatMode">
+                <option value="12_1112">12% dari DPP 11/12 (efektif 11%), barang dan jasa standar</option>
+                <option value="12">12% dari DPP penuh, barang mewah</option>
+                <option value="11">11%, dokumen sebelum 2025</option>
+                <option value="CUSTOM">Tarif lain</option>
+              </select>
+            </div>
+            <div class="field hidden" id="customVatField"><label for="customVat">Tarif PPN lain (%)</label><input id="customVat" type="number" min="0" step="0.01" value="11"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option">
+        <label class="check"><input type="checkbox" id="whtEnabled"> PPh dikenakan</label>
+        <div id="whtFields" class="inner hidden">
+          <div class="grid g2">
+            <div class="field"><label for="whtType">Pajak</label><select id="whtType"></select></div>
+            <div class="field"><label for="whtObject">Objek Pajak</label><select id="whtObject"></select></div>
+          </div>
+          <div class="grid g3">
+            <div class="field hidden" id="terField">
+              <label for="whtStatus">Status Karyawan (PTKP)</label>
+              <select id="whtStatus">
+                <option value="TK/0">TK/0 (kategori A)</option><option value="TK/1">TK/1 (kategori A)</option><option value="K/0">K/0 (kategori A)</option>
+                <option value="TK/2">TK/2 (kategori B)</option><option value="TK/3">TK/3 (kategori B)</option>
+                <option value="K/1">K/1 (kategori B)</option><option value="K/2">K/2 (kategori B)</option>
+                <option value="K/3">K/3 (kategori C)</option>
+              </select>
+            </div>
+            <div class="field"><label for="whtRate">Tarif</label><select id="whtRate"></select></div>
+            <div class="field hidden" id="customWhtField"><label for="customWht">Tarif lain (%)</label><input id="customWht" type="number" min="0" step="0.01" value="2"></div>
+            <div class="field"><label for="whtAmount">Jumlah, jika dihitung sendiri (Rp)</label><input id="whtAmount" class="money" inputmode="decimal" placeholder="Kosongkan untuk menggunakan tarif"></div>
+          </div>
+          <div class="option hidden" id="noNpwpField"><label class="check"><input type="checkbox" id="whtNoNpwp"> Penerima tidak memiliki NPWP (tarif lebih tinggi)</label></div>
+          <div class="grid" style="grid-template-columns:1fr">
+            <div class="field"><label for="whtAccount" id="whtAccountLabel">Akun utang pajak</label><input id="whtAccount" list="coaAll" placeholder="Ketik kode atau nama akun"></div>
+          </div>
+          <div class="hint" id="whtNote"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="row between">
+      <h2 style="margin:0">Baris Jurnal</h2>
+      <span class="sub" style="margin:0">Setiap baris dapat diubah.</span>
+    </div>
+    <div class="ledger">
+      <table>
+        <thead><tr><th>Akun</th><th>Pelanggan / Pemasok</th><th>Catatan baris</th><th class="num">Debit</th><th class="num">Kredit</th><th></th></tr></thead>
+        <tbody id="journalRows"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px"><button type="button" class="quiet" id="btnAddLine">Tambah baris</button></div>
+    <div class="foot">
+      <div class="t"><span>Total debit</span><strong id="totalDebit">0</strong></div>
+      <div class="t"><span>Total kredit</span><strong id="totalCredit">0</strong></div>
+      <div class="t"><span>Selisih</span><strong id="difference">0</strong></div>
+    </div>
+    <div id="balanceStatus" class="idle">Masukkan baris jurnal.</div>
+  </section>
+
+  <div class="note">Entri Terbantu hanya menyiapkan baris. Periksa akun, jumlah, tarif pajak, dan perlakuan pajak sesuai peraturan terkini sebelum Anda posting.</div>
+
+  <div class="actions">
+    <button class="quiet" id="draftButton" type="button">Simpan draf</button>
+    <button class="primary" id="postButton" type="button">Posting jurnal</button>
+  </div>
+  <div id="message" role="status" aria-live="polite"></div>
+</div>
+
+<div id="overlay" class="overlay hidden">
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h3 id="dlgTitle"></h3><p id="dlgBody"></p>
+    <div class="row"><button class="quiet" id="dlgCancel" type="button">Batal</button><button class="primary" id="dlgOk" type="button">Konfirmasi</button></div>
+  </div>
+</div>
+
+<div id="partyOverlay" class="overlay hidden">
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h3>Tambah pelanggan atau pemasok</h3>
+    <div class="field" style="margin-top:10px"><label for="pName">Nama</label><input id="pName"></div>
+    <div class="grid g2" style="margin-top:10px">
+      <div class="field"><label for="pType">Jenis</label><select id="pType"><option value="Customer">Pelanggan</option><option value="Supplier">Pemasok</option><option value="Both">Keduanya</option></select></div>
+      <div class="field"><label for="pTerms">Syarat pembayaran (hari)</label><input id="pTerms" type="number" min="0" value="0"></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label for="pTax">NPWP atau NIK (opsional)</label><input id="pTax"></div>
+    <div id="pMsg" class="warn"></div>
+    <div class="row"><button class="quiet" id="pCancel" type="button">Batal</button><button class="primary" id="pSave" type="button">Simpan</button></div>
+  </div>
+</div>
+
+<script>
+const INITIAL_DRAFT_ID = <?!= JSON.stringify(draftId || '') ?>;
+const APP_MODE = <?!= JSON.stringify(typeof appMode === 'undefined' ? 'PRACTICE' : appMode) ?>;
+let currentDraftId = INITIAL_DRAFT_ID || '';
+let CFG = null, accounts = [], parties = [], TAX = { objects: [], ter: [], brackets: {} }, TPL = {}, tpl = null;
+let linesEdited = false, typeTouched = false, baseAuto = true, whtAccAuto = true;
+let dueTouched = false, dateTouched = false, suspend = true, lastSummary = null, genTimer = null;
+const $ = id => document.getElementById(id);
+
+const TAX_LABELS = { PPH21: 'PPh 21 (penghasilan karyawan dan perorangan)', PPH22: 'PPh 22', PPH23: 'PPh 23', PPH42: 'PPh 4(2) final' };
+const TAX_SHORT = { PPH21: 'PPh 21', PPH22: 'PPh 22', PPH23: 'PPh 23', PPH42: 'PPh 4(2)' };
+
+const VISIBLE_LABELS = {
+  'General Journal': 'Jurnal Umum',
+  'Sales Journal': 'Jurnal Penjualan',
+  'Purchase Journal': 'Jurnal Pembelian',
+  'Cash Receipt Journal': 'Jurnal Penerimaan Kas',
+  'Cash Disbursement Journal': 'Jurnal Pengeluaran Kas',
+  'Payroll Journal': 'Jurnal Penggajian',
+  'Asset Acquisition': 'Akuisisi Aset',
+  'Asset Disposal': 'Pelepasan Aset',
+  'Capital & Equity': 'Modal & Ekuitas',
+  'Loan & Financing': 'Pinjaman & Pembiayaan',
+  'Fund Transfer': 'Transfer Dana',
+  'Inventory Adjustment': 'Penyesuaian Persediaan',
+  'Production Transfer': 'Transfer Produksi',
+  'Adjusting Entry': 'Jurnal Penyesuaian',
+  'Reversing Entry': 'Jurnal Pembalik',
+  'Closing Entry': 'Jurnal Penutup',
+  'Opening Entry': 'Jurnal Awal',
+  'Correction Entry': 'Jurnal Koreksi',
+  'Reclassification Entry': 'Jurnal Reklasifikasi',
+  'Everyday': 'Sehari-hari',
+  'Specialized': 'Khusus',
+  'Period-end': 'Akhir Periode',
+  'Goods': 'Barang',
+  'Services': 'Jasa',
+  'Rental': 'Sewa',
+  'Other': 'Lainnya',
+  'Account': 'Akun',
+  'Amount': 'Jumlah',
+  'Amount (Rp)': 'Jumlah (Rp)',
+  'Amount paid now': 'Jumlah dibayar sekarang',
+  'Cash or bank account': 'Akun kas atau bank',
+  'Customer or supplier': 'Pelanggan atau Pemasok',
+  'Tax object': 'Objek Pajak',
+  'Tax payable account': 'Akun utang pajak',
+  'Rate': 'Tarif',
+  'Date': 'Tanggal',
+  'Reference': 'Referensi',
+  'Description': 'Keterangan',
+  'Category': 'Kategori',
+  'Payment': 'Pembayaran',
+  'Transaction': 'Transaksi',
+  'Cost of Goods Sold': 'Harga Pokok Penjualan',
+  'VAT': 'PPN',
+  'Withholding Tax (PPh)': 'PPh',
+  'Withholding Tax': 'PPh',
+  'VAT (PPN)': 'PPN',
+  'VAT Input (PPN Masukan)': 'PPN Masukan',
+  'VAT Output (PPN Keluaran)': 'PPN Keluaran',
+  'Input VAT': 'PPN Masukan',
+  'Output VAT': 'PPN Keluaran',
+  'Trade Receivables': 'Piutang Usaha',
+  'Trade Payables': 'Utang Usaha',
+  'Opening balance': 'Saldo awal',
+  'Sales revenue before tax': 'Pendapatan penjualan sebelum pajak',
+  'optional': 'opsional',
+  'Optional': 'Opsional',
+  'Before tax': 'Sebelum pajak',
+  'Including VAT': 'Termasuk PPN',
+  'active accounts': 'akun aktif',
+  'customers and suppliers': 'pelanggan dan pemasok',
+  'Trading': 'Perdagangan',
+  'trading': 'perdagangan',
+  'Manufacturing': 'Manufaktur',
+  'manufacturing': 'manufaktur',
+  'Service': 'Jasa',
+  'service': 'jasa',
+  'Debit': 'Debit',
+  'Credit': 'Kredit'
+};
+const VISIBLE_LABEL_KEYS = Object.keys(VISIBLE_LABELS).sort((a, b) => b.length - a.length);
+const visibleLabel = s => {
+  if (s == null) return s;
+  const text = String(s);
+  if (VISIBLE_LABELS[text] != null) return VISIBLE_LABELS[text];
+  return VISIBLE_LABEL_KEYS.reduce((out, k) => out.split(k).join(VISIBLE_LABELS[k]), text);
+};
+const journalTypeValue = v => Object.keys(VISIBLE_LABELS).find(k => VISIBLE_LABELS[k] === v) || v;
+
+/* ---------- Pure calculation (no DOM) ---------- */
+// <<COMPUTE_START
+const TER_CATEGORY = { 'TK/0': 'A', 'TK/1': 'A', 'K/0': 'A', 'TK/2': 'B', 'TK/3': 'B', 'K/1': 'B', 'K/2': 'B', 'K/3': 'C' };
+
+function terRate(rows, cat, income) {
+  const list = rows.filter(r => r.cat === cat);
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].to === '' || income <= list[i].to) return list[i].rate;
+  }
+  return 0;
+}
+
+function bracketTax(tiers, amount) {
+  let tax = 0;
+  tiers.forEach(t => {
+    const hi = (t.to === '' || t.to == null) ? Infinity : t.to;
+    const part = Math.min(amount, hi) - t.from;
+    if (part > 0) tax += part * t.rate / 100;
+  });
+  return Math.round(tax);
+}
+
+function computeAssisted(p) {
+  const R = Math.round;
+  const need = (code, label) => {
+    if (!code) throw new Error('Akun belum ditentukan untuk ' + label + '. Periksa Lembar Pengaturan atau pilih akun.');
+    return code;
+  };
+  if (!(p.amount > 0)) throw new Error('Masukkan jumlah lebih besar dari nol.');
+  if (!p.baseAccount) throw new Error('Pilih akun utama.');
+  const isSales = p.engine === 'SALES';
+  const m = p.map;
+  const basis = p.basis || 'BEFORE';
+  if (p.wht.enabled && p.wht.beforeOnly && basis !== 'BEFORE') {
+    throw new Error('Untuk objek PPh ini, atur "Jumlah tersebut" menjadi Sebelum pajak.');
+  }
+  const vEff = p.vat.enabled ? (p.vat.mode === '12_1112' ? 0.11 : p.vat.rate / 100) : 0;
+  const fixedWht = p.wht.enabled && p.wht.amount > 0 ? R(p.wht.amount) : 0;
+  const rateBased = p.wht.enabled && !fixedWht && !p.wht.tiers;
+  const wEff = rateBased ? p.wht.factor * p.wht.rate / 100 : 0;
+  const addOn = p.wht.enabled && !!p.wht.addOn && !isSales;
+
+  let dpp = p.amount;
+  if (basis === 'INCL_VAT') dpp = R(p.amount / (1 + vEff));
+  else if (basis === 'NET') {
+    const s = addOn ? 1 : -1;
+    dpp = R((p.amount - s * fixedWht) / (1 + vEff + s * wEff));
+  }
+
+  let vat = 0, vatBase = 0;
+  if (p.vat.enabled) {
+    vatBase = p.vat.mode === '12_1112' ? R(dpp * 11 / 12) : dpp;
+    vat = R(vatBase * p.vat.rate / 100);
+    if (basis === 'INCL_VAT') vat = p.amount - dpp;
+  }
+
+  let wht = 0, whtRate = 0, whtBase = dpp;
+  if (p.wht.enabled) {
+    need(p.wht.account, 'PPh');
+    if (fixedWht) { wht = fixedWht; whtRate = R(wht / dpp * 10000) / 100; }
+    else if (p.wht.tiers) { wht = bracketTax(p.wht.tiers, dpp); whtRate = R(wht / dpp * 10000) / 100; }
+    else { whtBase = R(dpp * p.wht.factor); wht = R(whtBase * p.wht.rate / 100); whtRate = p.wht.rate; }
+    if (!(wht > 0)) throw new Error('PPh adalah nol. Masukkan tarif atau jumlah.');
+  }
+
+  let net = dpp + vat + (addOn ? wht : -wht);
+  if (basis === 'NET') {
+    const r = p.amount - net;
+    if (Math.abs(r) > 3) throw new Error('Jumlah tidak cocok. Periksa tarif dan jumlah.');
+    if (r) { if (p.vat.enabled) vat += r; else dpp += r; net = p.amount; }
+  }
+  const gross = dpp + vat;
+  if (net < 0) throw new Error('PPh lebih besar dari nilai transaksi.');
+
+  let paid = 0;
+  if (p.method !== 'CREDIT') need(p.paymentAccount, 'pembayaran kas atau bank');
+  if (p.method === 'CASH_BANK') paid = net;
+  if (p.method === 'PARTIAL') {
+    paid = p.paymentAmount;
+    if (!(paid > 0) || paid > net) {
+      throw new Error('Jumlah yang dibayar sekarang harus lebih dari nol dan tidak lebih dari ' + net.toLocaleString('id-ID') + '.');
+    }
+  }
+  const remaining = Math.round((net - paid) * 100) / 100;
+
+  const lines = [];
+  const add = (code, debit, credit, description, tax) =>
+    lines.push({ accountCode: String(code), debit: debit, credit: credit, description: description, tax: tax || null });
+  const vatTax = type => ({ taxType: type, taxRate: p.vat.rate, taxBase: vatBase, taxAmount: vat });
+  const whtTax = { taxType: p.wht.taxType || '', taxRate: whtRate, taxBase: whtBase, taxAmount: wht };
+
+  if (!isSales) {
+    const L = {
+      PURCHASE: ['Pembelian sebelum pajak', 'Pembayaran kepada pemasok', 'Saldo belum dibayar kepada pemasok'],
+      EXPENSE: ['Beban sebelum pajak', 'Pembayaran beban', 'Beban belum dibayar'],
+      PAYROLL: ['Beban penggajian bruto', 'Penggajian bersih dibayar', 'Penggajian belum dibayar']
+    }[p.engine];
+    if (!L) throw new Error('Jenis transaksi tidak dikenal.');
+    add(p.baseAccount, dpp, 0, L[0]);
+    if (vat > 0) add(need(m.inputVat, 'PPN Masukan'), vat, 0, 'PPN Masukan', vatTax('PPN Masukan'));
+    if (wht > 0 && addOn) add(p.wht.account, wht, 0, p.wht.short + ' dibayar atas impor (pajak penghasilan dibayar di muka)', whtTax);
+    if (wht > 0 && !addOn) add(p.wht.account, 0, wht, p.wht.short + ' dipotong, utang kepada kantor pajak', whtTax);
+    if (paid > 0) add(p.paymentAccount, 0, paid, L[1]);
+    if (remaining > 0) {
+      add(p.engine === 'PAYROLL' ? need(m.salariesPayable, 'Utang Gaji') : need(m.ap, 'Utang Usaha'), 0, remaining, L[2]);
+    }
+  } else {
+    if (wht > 0) {
+      add(p.wht.account, wht, 0,
+        p.wht.final ? 'Pajak penghasilan final dipotong oleh pelanggan' : 'Pajak penghasilan dipotong oleh pelanggan (dibayar di muka)', whtTax);
+    }
+    if (paid > 0) add(p.paymentAccount, paid, 0, 'Pembayaran diterima dari pelanggan');
+    if (remaining > 0) add(need(m.ar, 'Piutang Usaha'), remaining, 0, 'Piutang pelanggan yang belum tertagih');
+    add(p.baseAccount, 0, dpp, 'Pendapatan penjualan sebelum pajak');
+    if (vat > 0) add(need(m.outputVat, 'PPN Keluaran'), 0, vat, 'PPN Keluaran', vatTax('PPN Keluaran'));
+    if (p.cogs.enabled) {
+      if (!(p.cogs.amount > 0)) throw new Error('Masukkan Harga Pokok Penjualan, atau batalkan pilihan tersebut.');
+      add(need(m.cogs, 'Harga Pokok Penjualan'), p.cogs.amount, 0, 'Harga Pokok Penjualan');
+      add(need(p.cogs.inventoryAccount, 'persediaan yang dikeluarkan'), 0, p.cogs.amount, 'Persediaan dikeluarkan (perpetual)');
+    }
+  }
+  if (p.flip) {
+    lines.forEach(l => { const d = l.debit; l.debit = l.credit; l.credit = d; l.description += ' (retur)'; });
+  }
+  const dr = lines.reduce((s, x) => s + x.debit, 0);
+  const cr = lines.reduce((s, x) => s + x.credit, 0);
+  if (Math.abs(dr - cr) > 0.005) throw new Error('Jurnal yang dihasilkan tidak seimbang. Periksa jumlah dan pajak.');
+  return { lines: lines, summary: { dpp: dpp, vat: vat, wht: wht, gross: gross, net: net, paid: paid, remaining: remaining, addOn: addOn } };
+}
+
+function computeDsl(t, v) {
+  const R2 = n => Math.round(n * 100) / 100;
+  (t.inputs || []).forEach(i => {
+    if (!i.optional && !(v.inputs[i.id] > 0)) throw new Error('Masukkan ' + visibleLabel(i.label).toLowerCase() + '.');
+  });
+  const out = [];
+  let sd = 0, sc = 0;
+  const val = e => {
+    if (Array.isArray(e)) return Math.min.apply(null, e.slice(1).map(val));
+    if (e === 'DminusC') return Math.max(sd - sc, 0);
+    if (e === 'CminusD') return Math.max(sc - sd, 0);
+    return Number(v.inputs[e]) || 0;
+  };
+  t.lines.forEach(l => {
+    const amt = R2(val(l[2]));
+    if (!(amt > 0)) return;
+    const slot = t.slots.find(s => s.id === l[1]);
+    const code = v.slots[l[1]];
+    if (!code) throw new Error('Pilih akun untuk: ' + visibleLabel(slot.label) + '.');
+    out.push({ accountCode: String(code), debit: l[0] === 'D' ? amt : 0, credit: l[0] === 'C' ? amt : 0, description: l[3] || '', tax: null });
+    if (l[0] === 'D') sd += amt; else sc += amt;
+  });
+  if (!out.length) throw new Error('Masukkan jumlah.');
+  if (Math.abs(sd - sc) > 0.005) throw new Error('Jurnal yang dihasilkan tidak seimbang.');
+  return { lines: out, summary: null };
+}
+// <<COMPUTE_END
+
+/* ---------- Basics ---------- */
+function parseMoney(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  let s = String(value == null ? '' : value).trim().replace(/Rp/gi, '').replace(/\s/g, '');
+  if (!s) return 0;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+}
+function money(value) {
+  const n = parseMoney(value);
+  return Number.isFinite(n) ? new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n) : '0';
+}
+function setMessage(text, kind) { const el = $('message'); el.textContent = text || ''; el.className = kind || ''; }
+function pad(n) { return String(n).padStart(2, '0'); }
+function localDate() { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function addDays(iso, n) {
+  const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+const accountLabel = a => a.code + ' - ' + a.name;
+const accountByCode = code => accounts.find(a => String(a.code) === String(code)) || null;
+function accountFromInput(value) {
+  const t = String(value || '').trim().toLowerCase();
+  if (!t) return null;
+  return accounts.find(a => t === accountLabel(a).toLowerCase() || t === String(a.code) || t === a.name.toLowerCase()) || null;
+}
+function setAccountInput(id, code) { const a = accountByCode(code); $(id).value = a ? accountLabel(a) : ''; }
+const partyByName = n => parties.find(p => p.name.toLowerCase() === String(n || '').trim().toLowerCase()) || null;
+const selectedMode = () => document.querySelector('input[name="entryMode"]:checked').value;
+const isSalesEngine = () => !!tpl && tpl.engine === 'SALES';
+const currentJournalType = () => journalTypeValue($('journalType').value);
+const isOpening = () => currentJournalType() === 'Opening Entry';
+const accountAllowed = a => {
+  const scope = CFG && CFG.accountScopes ? CFG.accountScopes[currentJournalType()] : null;
+  return !scope || scope.includes(String(a.code));
+};
+const partyEligible = a => {
+  if (!a || !CFG || !CFG.partyAccountCodes) return false;
+  return (CFG.partyAccountCodes.Customer || []).concat(CFG.partyAccountCodes.Supplier || []).includes(String(a.code));
+};
+
+function fillLists() {
+  ['coaAll', 'coaCash', 'partyList'].forEach(id => { $(id).innerHTML = ''; });
+  accounts.forEach(a => {
+    if (!accountAllowed(a)) return;
+    const o = document.createElement('option'); o.value = accountLabel(a);
+    $('coaAll').appendChild(o);
+    if (a.group === 'Cash & Cash Equivalents') $('coaCash').appendChild(o.cloneNode());
+  });
+  fillParties();
+}
+function fillParties() {
+  $('partyList').innerHTML = '';
+  parties.forEach(p => { const o = document.createElement('option'); o.value = p.name; $('partyList').appendChild(o); });
+}
+function fillJournalTypes(groups) {
+  const sel = $('journalType'); sel.innerHTML = '';
+  groups.forEach(g => {
+    const og = document.createElement('optgroup'); og.label = visibleLabel(g.group);
+    g.items.forEach(n => { const o = document.createElement('option'); o.value = n; o.textContent = visibleLabel(n); og.appendChild(o); });
+    sel.appendChild(og);
+  });
+}
+function fillTemplates(list) {
+  const sel = $('template'); sel.innerHTML = ''; TPL = {};
+  const groups = {};
+  list.forEach(t => { TPL[t.id] = t; (groups[t.group] = groups[t.group] || []).push(t); });
+  Object.keys(groups).forEach(g => {
+    const og = document.createElement('optgroup'); og.label = visibleLabel(g);
+    groups[g].forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = visibleLabel(t.label); og.appendChild(o); });
+    sel.appendChild(og);
+  });
+}
+
+/* ---------- Template switching ---------- */
+function onTemplateChange() {
+  tpl = TPL[$('template').value];
+  if (!tpl) return;
+  const txn = tpl.kind === 'TXN';
+  $('txnBlock').classList.toggle('hidden', !txn);
+  $('dslBlock').classList.toggle('hidden', txn);
+  $('taxBlock').classList.toggle('hidden', !txn);
+  $('templateHint').textContent = visibleLabel(tpl.hint) || '';
+  $('partyLabel').textContent = visibleLabel(tpl.party) || 'Pelanggan atau Pemasok';
+  if (txn) refreshTxnUi(); else buildDslUi();
+  lastSummary = null; $('summary').classList.add('hidden'); $('genHint').textContent = '';
+  suggestJournalType();
+}
+function refreshTxnUi() {
+  $('baseLabel').textContent = visibleLabel(tpl.baseLabel) || 'Akun';
+  $('amountLabel').textContent = (visibleLabel(tpl.amountLabel) || 'Jumlah') + ' (Rp)';
+  $('paymentAccountLabel').textContent = visibleLabel(tpl.payLabel) || 'Akun kas atau bank';
+  $('paymentAmountLabel').textContent = (visibleLabel(tpl.payAmountLabel) || 'Jumlah dibayar sekarang') + ' (Rp)';
+  $('categoryField').classList.toggle('hidden', !tpl.categories);
+  $('vatBlock').classList.toggle('hidden', tpl.engine === 'PAYROLL');
+  if (tpl.engine === 'PAYROLL') $('vatEnabled').checked = false;
+  if (tpl.payDefault) setAccountInput('paymentAccount', tpl.payDefault);
+  baseAuto = true; applyBaseDefault();
+  fillWhtTypes(); updateVatUi(); updateWhtUi(); updateCogsUi(); updatePaymentUi();
+}
+function buildDslUi() {
+  const sl = $('dslSlots'), inp = $('dslInputs');
+  sl.innerHTML = ''; inp.innerHTML = '';
+  tpl.slots.forEach(s => {
+    const f = document.createElement('div'); f.className = 'field';
+    f.innerHTML = '<label></label><input placeholder="Ketik kode atau nama akun">';
+    f.querySelector('label').textContent = visibleLabel(s.label);
+    const i = f.querySelector('input');
+    i.dataset.slot = s.id; i.setAttribute('list', s.pick === 'cash' ? 'coaCash' : 'coaAll');
+    const a = accountByCode(s.default); if (a) i.value = accountLabel(a);
+    sl.appendChild(f);
+  });
+  tpl.inputs.forEach(x => {
+    const f = document.createElement('div'); f.className = 'field';
+    f.innerHTML = '<label></label><input class="money" inputmode="decimal" placeholder="0">';
+    f.querySelector('label').textContent = visibleLabel(x.label) + (x.optional ? ' (opsional)' : '') + ' (Rp)';
+    const i = f.querySelector('input'); i.dataset.input = x.id;
+    i.addEventListener('blur', () => { const n = parseMoney(i.value); if (Number.isFinite(n) && n !== 0) i.value = money(n); });
+    inp.appendChild(f);
+  });
+}
+function defaultBaseCode() {
+  if (!tpl || tpl.kind !== 'TXN' || !CFG) return '';
+  const M = CFG.mappings, cat = $('transactionCategory').value, bt = CFG.businessType;
+  if (tpl.baseDefault && tpl.baseDefault !== 'auto') return tpl.baseDefault;
+  if (tpl.engine === 'PURCHASE' && (tpl.categories || tpl.baseDefault === 'auto') && cat === 'GOODS') {
+    return bt === 'Manufacturing' ? M.rawMaterials : (bt === 'Trading' ? M.merchandise : '');
+  }
+  if (tpl.engine === 'SALES' && tpl.categories) {
+    return cat === 'GOODS' ? M.salesProduct : (cat === 'SERVICES' ? M.salesService : (cat === 'RENTAL' ? M.salesRental : ''));
+  }
+  return '';
+}
+function applyBaseDefault() {
+  if (!baseAuto || !tpl || tpl.kind !== 'TXN') return;
+  setAccountInput('baseAccount', defaultBaseCode());
+  $('baseHint').textContent = $('baseAccount').value ? 'Disarankan berdasarkan jenis usaha Anda. Anda dapat mengubahnya.' : '';
+}
+function suggestJournalType() {
+  if (typeTouched || selectedMode() !== 'ASSISTED' || !tpl) return;
+  let v = tpl.journalType || 'General Journal';
+  if (tpl.engine === 'EXPENSE' && $('paymentMethod').value === 'CREDIT') v = 'General Journal';
+  $('journalType').value = v;
+  onJournalTypeUi();
+}
+
+/* ---------- Show and hide ---------- */
+function updateModeUi() {
+  const assisted = selectedMode() === 'ASSISTED';
+  $('assisted').classList.toggle('hidden', !assisted);
+  $('modeHelp').textContent = assisted
+    ? 'Pilih apa yang Anda catat dan baris jurnal akan disiapkan untuk Anda. Anda dapat mengubahnya setelahnya.'
+    : 'Masukkan akun dan jumlah sendiri.';
+}
+function updatePaymentUi() {
+  const m = $('paymentMethod').value;
+  $('paymentAccountField').classList.toggle('hidden', m === 'CREDIT');
+  $('paymentAmountField').classList.toggle('hidden', m !== 'PARTIAL');
+}
+function updateVatUi() {
+  $('vatFields').classList.toggle('hidden', !$('vatEnabled').checked);
+  $('customVatField').classList.toggle('hidden', $('vatMode').value !== 'CUSTOM');
+}
+function updateWhtUi() {
+  $('whtFields').classList.toggle('hidden', !$('whtEnabled').checked);
+  $('customWhtField').classList.toggle('hidden', $('whtRate').value !== 'CUSTOM');
+}
+function updateCogsUi() {
+  const show = !!tpl && tpl.kind === 'TXN' && !!tpl.cogs && $('transactionCategory').value === 'GOODS' &&
+    CFG && CFG.businessType !== 'Service';
+  $('cogsBox').classList.toggle('hidden', !show);
+  $('cogsFields').classList.toggle('hidden', !show || !$('cogsEnabled').checked);
+}
+function onJournalTypeUi() {
+  const opening = isOpening();
+  fillLists();
+  document.querySelectorAll('#journalRows tr').forEach(syncPartyField);
+  $('openingBar').classList.toggle('hidden', !opening);
+  if (opening) {
+    document.querySelectorAll('input[name="entryMode"]').forEach(el => { el.checked = el.value === 'MANUAL'; });
+    updateModeUi();
+    if (!dateTouched && CFG) $('date').value = new Date().getFullYear() + '-' + pad(CFG.fiscalStartMonth) + '-01';
+  }
+}
+
+/* ---------- Withholding tax selectors (data comes from the Tax Rates sheet) ---------- */
+function curObj() { return TAX.objects.find(o => o.tax === $('whtType').value && o.code === $('whtObject').value) || null; }
+function fillWhtTypes() {
+  const sel = $('whtType'), keep = sel.value, seen = [];
+  sel.innerHTML = '';
+  TAX.objects.forEach(o => {
+    if (seen.includes(o.tax)) return;
+    seen.push(o.tax);
+    if (isSalesEngine() && o.tax === 'PPH21') return;
+    const op = document.createElement('option'); op.value = o.tax; op.textContent = TAX_LABELS[o.tax] || o.tax; sel.appendChild(op);
+  });
+  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+  updateWhtObjects();
+}
+function updateWhtObjects() {
+  const sel = $('whtObject'), keep = sel.value;
+  sel.innerHTML = '';
+  TAX.objects.filter(o => o.tax === $('whtType').value && !(isSalesEngine() && o.addOn)).forEach(o => {
+    const op = document.createElement('option'); op.value = o.code; op.textContent = o.label; sel.appendChild(op);
+  });
+  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+  updateWhtRate();
+}
+function updateWhtRate() {
+  const o = curObj(), sel = $('whtRate');
+  sel.innerHTML = '';
+  const add = (v, t) => { const op = document.createElement('option'); op.value = v; op.textContent = t; sel.appendChild(op); };
+  if (o && o.method === 'TER') add('TER', 'Tabel TER (otomatis)');
+  else if (o && o.method === 'TIERED') add('TIERED', 'Tarif progresif (otomatis)');
+  else if (o && o.rate !== '') add(String(o.rate), o.rate + '% (disarankan)');
+  add('CUSTOM', 'Tarif lain');
+  $('terField').classList.toggle('hidden', !(o && o.method === 'TER'));
+  $('noNpwpField').classList.toggle('hidden', !(o && o.mult > 1 && (o.method === 'TER' || o.method === 'RATE')));
+  defaultWhtAccount(); updateWhtUi(); updateWhtNote();
+}
+function updateWhtNote() {
+  const o = curObj();
+  let t = o && o.notes ? o.notes + ' ' : '';
+  if (o && o.method === 'TER') {
+    const dpp = parseMoney($('amount').value);
+    if (dpp > 0) {
+      const cat = TER_CATEGORY[$('whtStatus').value];
+      t += 'Kategori TER ' + cat + ': ' + terRate(TAX.ter, cat, dpp) + '% dari Rp ' + money(dpp) + '.';
+    }
+  } else {
+    t += 'Tarif bersifat saran. Pastikan objek, penerima, dan peraturan terkini sebelum posting.';
+  }
+  $('whtNote').textContent = t;
+}
+function defaultWhtAccount() {
+  if (!whtAccAuto || !CFG || !tpl) return;
+  const M = CFG.mappings, t = $('whtType').value, o = curObj();
+  let code = '';
+  if (isSalesEngine()) code = ({ PPH22: M.prepaidPph22, PPH23: M.prepaidPph23, PPH42: M.finalTaxExpense })[t] || '';
+  else if (o && o.addOn) code = M.prepaidPph22;
+  else code = ({ PPH21: M.pph21Payable, PPH22: M.pph22Payable, PPH23: M.pph23Payable, PPH42: M.pph42Payable })[t] || '';
+  setAccountInput('whtAccount', code);
+  $('whtAccountLabel').textContent = isSalesEngine()
+    ? (t === 'PPH42' ? 'Akun beban pajak final' : 'Akun pajak penghasilan dibayar di muka')
+    : (o && o.addOn ? 'Akun pajak penghasilan dibayar di muka' : 'Akun utang pajak');
+}
+
+/* ---------- Reading the fields ---------- */
+function gatherTxn() {
+  const amount = parseMoney($('amount').value);
+  if (!Number.isFinite(amount)) throw new Error('Jumlah bukan angka yang valid.');
+  const baseText = $('baseAccount').value.trim(), base = accountFromInput(baseText);
+  if (baseText && !base) throw new Error('Akun utama tidak ada dalam Bagan Akun.');
+  const method = $('paymentMethod').value;
+  const payText = $('paymentAccount').value.trim(), pay = accountFromInput(payText);
+  if (method !== 'CREDIT' && payText && !pay) throw new Error('Akun kas atau bank tidak ada dalam Bagan Akun.');
+  const partial = parseMoney($('paymentAmount').value);
+  if (!Number.isFinite(partial)) throw new Error('Jumlah yang dibayar sekarang bukan angka yang valid.');
+
+  const vatOn = $('vatEnabled').checked && tpl.engine !== 'PAYROLL';
+  const vatMode = $('vatMode').value;
+  let vatRate = 0;
+  if (vatOn) {
+    vatRate = vatMode === 'CUSTOM' ? Number($('customVat').value) : (vatMode === '11' ? 11 : 12);
+    if (!Number.isFinite(vatRate) || vatRate < 0) throw new Error('Tarif PPN tidak valid.');
+  }
+
+  let wht = { enabled: false };
+  if ($('whtEnabled').checked) {
+    const o = curObj();
+    if (!o) throw new Error('Pilih objek pajak.');
+    const rv = $('whtRate').value;
+    let rate = 0, tiers = null, beforeOnly = false;
+    if (rv === 'TER') { rate = terRate(TAX.ter, TER_CATEGORY[$('whtStatus').value], amount); beforeOnly = true; }
+    else if (rv === 'TIERED') {
+      tiers = TAX.brackets[o.bracket];
+      if (!tiers) throw new Error('Tarif progresif "' + o.bracket + '" tidak ditemukan di Lembar Tarif Pajak.');
+      beforeOnly = true;
+    } else rate = rv === 'CUSTOM' ? Number($('customWht').value) : Number(rv);
+    if (!Number.isFinite(rate) || rate < 0) throw new Error('Tarif PPh tidak valid.');
+    if (!tiers && $('whtNoNpwp').checked && o.mult > 1 && (o.method === 'TER' || o.method === 'RATE')) {
+      rate = Math.round(rate * o.mult * 10000) / 10000;
+    }
+    const override = parseMoney($('whtAmount').value);
+    if (!Number.isFinite(override)) throw new Error('Jumlah PPh bukan angka yang valid.');
+    const accText = $('whtAccount').value.trim(), acc = accountFromInput(accText);
+    if (accText && !acc) throw new Error('Akun pajak tidak ada dalam Bagan Akun.');
+    wht = {
+      enabled: true, short: TAX_SHORT[o.tax] || o.tax, taxType: (TAX_SHORT[o.tax] || o.tax) + ' - ' + o.label,
+      rate: rate, factor: o.factor || 1, amount: override, tiers: tiers, beforeOnly: beforeOnly,
+      account: acc ? acc.code : '', addOn: !!o.addOn && !isSalesEngine(), final: o.tax === 'PPH42'
+    };
+  }
+  const cogsOn = !$('cogsBox').classList.contains('hidden') && $('cogsEnabled').checked;
+  const cogsAmount = parseMoney($('cogsAmount').value);
+  if (cogsOn && !Number.isFinite(cogsAmount)) throw new Error('Harga Pokok Penjualan bukan angka yang valid.');
+  return {
+    engine: tpl.engine, flip: !!tpl.flip, basis: $('amountBasis').value, amount: amount, method: method,
+    baseAccount: base ? base.code : '', paymentAccount: pay ? pay.code : '', paymentAmount: partial,
+    vat: { enabled: vatOn, mode: vatMode, rate: vatRate }, wht: wht,
+    cogs: { enabled: cogsOn, amount: cogsAmount,
+      inventoryAccount: CFG.businessType === 'Manufacturing' ? CFG.mappings.finishedGoods : CFG.mappings.merchandise },
+    map: CFG.mappings
+  };
+}
+function gatherDsl() {
+  const v = { slots: {}, inputs: {} };
+  $('dslSlots').querySelectorAll('input').forEach(i => {
+    const t = i.value.trim(), a = accountFromInput(t);
+    if (t && !a) throw new Error('"' + t + '" tidak ada dalam Bagan Akun.');
+    v.slots[i.dataset.slot] = a ? a.code : '';
+  });
+  $('dslInputs').querySelectorAll('input').forEach(i => {
+    const n = parseMoney(i.value);
+    if (!Number.isFinite(n)) throw new Error('Sebuah jumlah bukan angka yang valid.');
+    v.inputs[i.dataset.input] = n;
+  });
+  return v;
+}
+
+/* ---------- Generate ---------- */
+function hasLineContent() {
+  return Array.from(document.querySelectorAll('#journalRows tr')).some(r =>
+    r.querySelector('.account').value.trim() || r.querySelector('.debit').value.trim() || r.querySelector('.credit').value.trim());
+}
+function generate() {
+  if (linesEdited && hasLineContent()) {
+    openDialog('Ganti baris saat ini?', 'Anda mengubah baris jurnal secara manual. Membuat ulang akan menggantinya.',
+      'Ganti baris', () => doGenerate(false));
+    return;
+  }
+  doGenerate(false);
+}
+function doGenerate(silent) {
+  try {
+    if (!tpl) throw new Error('Pilih apa yang Anda catat.');
+    const result = tpl.kind === 'TXN' ? computeAssisted(gatherTxn()) : computeDsl(tpl, gatherDsl());
+    lastSummary = result.summary;
+    renderLines(result.lines);
+    linesEdited = false;
+    showSummary(result.summary);
+    $('genHint').textContent = '';
+    setMessage(silent ? '' : 'Baris jurnal dibuat. Anda masih dapat mengubah setiap baris.', silent ? '' : 'success');
+    suggestJournalType();
+  } catch (e) {
+    if (silent) $('genHint').textContent = e.message; else setMessage(e.message, 'error');
+  }
+}
+function scheduleAuto() {
+  if (suspend || selectedMode() !== 'ASSISTED' || !$('autoGen').checked) return;
+  updateWhtNote();
+  if (linesEdited && hasLineContent()) {
+    $('genHint').textContent = 'Anda mengubah baris secara manual. Klik Buat baris jurnal untuk menyusun ulang.';
+    return;
+  }
+  clearTimeout(genTimer);
+  genTimer = setTimeout(() => doGenerate(true), 350);
+}
+function showSummary(s) {
+  const box = $('summary'); box.innerHTML = '';
+  if (!s) { box.classList.add('hidden'); return; }
+  const items = [['Jumlah sebelum pajak', s.dpp]];
+  if (s.vat) items.push(['PPN', s.vat]);
+  if (s.wht) items.push([s.addOn ? 'PPh dibayar atas impor' : 'PPh', s.wht]);
+  items.push([s.addOn ? 'Total yang harus dibayar' : 'Jumlah bersih', s.net]);
+  if (s.paid) items.push(['Dibayar atau diterima sekarang', s.paid]);
+  if (s.remaining) items.push(['Saldo tersisa', s.remaining]);
+  items.forEach(it => {
+    const d = document.createElement('div'), k = document.createElement('span'), v = document.createElement('strong');
+    k.textContent = it[0]; v.textContent = 'Rp ' + money(it[1]); d.append(k, v); box.appendChild(d);
+  });
+  box.classList.remove('hidden');
+}
+
+/* ---------- Journal lines table ---------- */
+function syncPartyField(tr) {
+  const party = tr.querySelector('.lparty');
+  const ok = partyEligible(accountFromInput(tr.querySelector('.account').value));
+  party.disabled = !ok;
+  party.placeholder = ok ? 'Opsional' : 'Tidak berlaku untuk akun ini';
+  if (!ok) party.value = '';
+}
+function addRow(pre) {
+  pre = pre || {};
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><input class="account" list="coaAll" placeholder="Ketik kode atau nama akun"><div class="warn"></div></td>' +
+    '<td><input class="lparty" list="partyList" placeholder="Opsional"></td>' +
+    '<td><input class="ldesc" placeholder="Catatan opsional"></td>' +
+    '<td><input class="amount debit" inputmode="decimal" placeholder="0"></td>' +
+    '<td><input class="amount credit" inputmode="decimal" placeholder="0"></td>' +
+    '<td><button type="button" class="remove" title="Hapus baris" aria-label="Hapus baris">&times;</button></td>';
+  const account = tr.querySelector('.account'), debit = tr.querySelector('.debit'), credit = tr.querySelector('.credit');
+  if (pre.accountCode) { const a = accountByCode(pre.accountCode); account.value = a ? accountLabel(a) : String(pre.accountCode); }
+  tr.querySelector('.lparty').value = pre.party || '';
+  tr.querySelector('.ldesc').value = pre.description || '';
+  const d = parseMoney(pre.debit), c = parseMoney(pre.credit);
+  if (Number.isFinite(d) && d !== 0) debit.value = money(d);
+  if (Number.isFinite(c) && c !== 0) credit.value = money(c);
+  tr.dataset.taxMeta = JSON.stringify(pre.taxMeta || {});
+  const edited = () => { linesEdited = true; };
+  account.addEventListener('input', () => { edited(); updateNormalWarning(tr); syncPartyField(tr); });
+  account.addEventListener('change', () => { updateNormalWarning(tr); syncPartyField(tr); });
+  tr.querySelector('.lparty').addEventListener('input', edited);
+  tr.querySelector('.ldesc').addEventListener('input', edited);
+  debit.addEventListener('input', () => { edited(); if (parseMoney(debit.value) > 0) credit.value = ''; calculate(); });
+  credit.addEventListener('input', () => { edited(); if (parseMoney(credit.value) > 0) debit.value = ''; calculate(); });
+  [debit, credit].forEach(el => el.addEventListener('blur', () => {
+    const n = parseMoney(el.value); if (Number.isFinite(n) && n !== 0) el.value = money(n); calculate();
+  }));
+  tr.querySelector('.remove').addEventListener('click', () => { tr.remove(); edited(); calculate(); });
+  $('journalRows').appendChild(tr);
+  updateNormalWarning(tr);
+  syncPartyField(tr);
+  return tr;
+}
+function renderLines(lines) {
+  $('journalRows').innerHTML = '';
+  lines.forEach(x => addRow({ accountCode: x.accountCode, debit: x.debit, credit: x.credit, party: x.party || '', description: x.description, taxMeta: x.tax || {} }));
+  calculate();
+}
+function normalSide(a) {
+  const n = String(a.normal || '').toUpperCase();
+  return n.includes('DEBIT') || n.includes('DEBET') ? 'Debit' : (n.includes('CREDIT') || n.includes('KREDIT') ? 'Credit' : '');
+}
+function updateNormalWarning(tr) {
+  const warn = tr.querySelector('.warn'), a = accountFromInput(tr.querySelector('.account').value);
+  if (!a) { warn.textContent = ''; return; }
+  const d = parseMoney(tr.querySelector('.debit').value), c = parseMoney(tr.querySelector('.credit').value);
+  const side = d > 0 ? 'Debit' : (c > 0 ? 'Credit' : ''), normal = normalSide(a);
+  warn.textContent = side && normal && side !== normal
+    ? 'Akun ini umumnya memiliki saldo ' + visibleLabel(normal) + ', tetapi baris ini berada di sisi ' + visibleLabel(side) + '.' : '';
+}
+function calculate() {
+  let d = 0, c = 0;
+  document.querySelectorAll('#journalRows tr').forEach(r => {
+    const dv = parseMoney(r.querySelector('.debit').value), cv = parseMoney(r.querySelector('.credit').value);
+    if (Number.isFinite(dv)) d += dv;
+    if (Number.isFinite(cv)) c += cv;
+    updateNormalWarning(r);
+  });
+  $('totalDebit').textContent = money(d); $('totalCredit').textContent = money(c); $('difference').textContent = money(Math.abs(d - c));
+  const st = $('balanceStatus');
+  if (d === 0 && c === 0) { st.textContent = 'Masukkan baris jurnal.'; st.className = 'idle'; }
+  else if (d > 0 && c > 0 && Math.abs(d - c) < 0.005) { st.textContent = 'Jurnal sudah seimbang.'; st.className = 'ok'; }
+  else { st.textContent = 'Jurnal belum seimbang.'; st.className = 'bad'; }
+}
+function collectLines() {
+  const lines = [], opening = isOpening();
+  document.querySelectorAll('#journalRows tr').forEach((row, i) => {
+    const text = row.querySelector('.account').value, dText = row.querySelector('.debit').value.trim(), cText = row.querySelector('.credit').value.trim();
+    if (!text.trim() && !dText && !cText) return;
+    if (opening && !dText && !cText) return;
+    const a = accountFromInput(text);
+    if (!a) throw new Error('Baris ' + (i + 1) + ': pilih akun dari Bagan Akun.');
+    if (!accountAllowed(a)) throw new Error('Baris ' + (i + 1) + ': akun ' + a.code + ' tidak diizinkan dalam ' + visibleLabel(currentJournalType()) + '.');
+    const d = parseMoney(dText), c = parseMoney(cText);
+    if (!Number.isFinite(d) || !Number.isFinite(c) || d < 0 || c < 0) throw new Error('Baris ' + (i + 1) + ': jumlah tidak valid.');
+    if ((d > 0 && c > 0) || (d === 0 && c === 0)) throw new Error('Baris ' + (i + 1) + ': masukkan jumlah Debit atau Kredit.');
+    const lp = row.querySelector('.lparty').value.trim();
+    if (lp && !partyEligible(a)) throw new Error('Baris ' + (i + 1) + ': Pelanggan / Pemasok tidak dapat diisi pada akun ' + a.code + '.');
+    if (lp && !partyByName(lp)) throw new Error('Baris ' + (i + 1) + ': "' + lp + '" tidak ada dalam Daftar Pihak. Gunakan Tambah Baru terlebih dahulu.');
+    let meta = {}; try { meta = JSON.parse(row.dataset.taxMeta || '{}'); } catch (e) { meta = {}; }
+    lines.push({
+      accountCode: a.code, debit: d, credit: c, party: lp, description: row.querySelector('.ldesc').value.trim(),
+      taxType: meta.taxType || '', taxRate: meta.taxRate == null ? '' : meta.taxRate,
+      taxBase: meta.taxBase == null ? '' : meta.taxBase, taxAmount: meta.taxAmount == null ? '' : meta.taxAmount
+    });
+  });
+  if (!lines.length) throw new Error('Tambahkan setidaknya satu baris jurnal.');
+  return lines;
+}
+
+/* ---------- Opening balances ---------- */
+function loadBsAccounts() {
+  const run = () => {
+    const bs = accounts.filter(a => accountAllowed(a) && ['ASSET', 'LIABILITY', 'EQUITY'].includes(a.type) && a.code !== CFG.mappings.openingEquity);
+    renderLines(bs.map(a => ({ accountCode: a.code, description: 'Saldo awal' })));
+    linesEdited = true;
+  };
+  if (hasLineContent()) openDialog('Ganti baris saat ini?', 'Baris saat ini akan diganti dengan daftar akun.', 'Ganti baris', run);
+  else run();
+}
+function plugOpening() {
+  const code = CFG.mappings.openingEquity;
+  if (!accountByCode(code)) { setMessage('Akun Ekuitas Saldo Awal tidak ada dalam Bagan Akun. Periksa Lembar Pengaturan.', 'error'); return; }
+  let d = 0, c = 0;
+  document.querySelectorAll('#journalRows tr').forEach(r => {
+    const a = accountFromInput(r.querySelector('.account').value);
+    if (a && a.code === code) { r.remove(); return; }
+    const dv = parseMoney(r.querySelector('.debit').value), cv = parseMoney(r.querySelector('.credit').value);
+    if (Number.isFinite(dv)) d += dv;
+    if (Number.isFinite(cv)) c += cv;
+  });
+  const diff = Math.round((d - c) * 100) / 100;
+  if (Math.abs(diff) >= 0.005) {
+    addRow({ accountCode: code, debit: diff < 0 ? -diff : 0, credit: diff > 0 ? diff : 0, description: 'Jumlah penyeimbang ke ekuitas saldo awal' });
+  }
+  linesEdited = true; calculate();
+  setMessage(Math.abs(diff) >= 0.005 ? 'Ekuitas Saldo Awal kini menyeimbangkan jurnal.' : 'Debit dan kredit sudah cocok.', 'success');
+}
+
+/* ---------- Parties and due date ---------- */
+function updateDue() {
+  if (dueTouched) return;
+  const p = partyByName($('party').value), d = $('date').value;
+  $('dueDate').value = p && p.terms > 0 && d ? addDays(d, p.terms) : '';
+}
+function openPartyDialog() {
+  $('pName').value = $('party').value.trim();
+  $('pType').value = tpl && tpl.party && /customer/i.test(tpl.party) ? 'Customer' : (tpl && /supplier/i.test(tpl.party || '') ? 'Supplier' : 'Both');
+  $('pTerms').value = 0; $('pTax').value = ''; $('pMsg').textContent = '';
+  $('partyOverlay').classList.remove('hidden'); $('pName').focus();
+}
+function saveParty() {
+  $('pSave').disabled = true;
+  google.script.run
+    .withSuccessHandler(p => {
+      $('pSave').disabled = false;
+      parties.push(p); fillParties(); $('party').value = p.name; updateDue();
+      $('partyOverlay').classList.add('hidden');
+    })
+    .withFailureHandler(e => { $('pSave').disabled = false; $('pMsg').textContent = e.message || String(e); })
+    .addParty({ name: $('pName').value, type: $('pType').value, terms: $('pTerms').value, taxId: $('pTax').value });
+}
+
+/* ---------- Draft: collect and restore ---------- */
+const SETTING_IDS = ['transactionCategory', 'baseAccount', 'amount', 'amountBasis', 'paymentMethod', 'paymentAccount',
+  'paymentAmount', 'cogsEnabled', 'cogsAmount', 'vatEnabled', 'vatMode', 'customVat', 'whtEnabled', 'whtType',
+  'whtObject', 'whtRate', 'customWht', 'whtAmount', 'whtStatus', 'whtNoNpwp', 'whtAccount', 'autoGen'];
+function collectAssistedSettings() {
+  const s = { template: tpl ? tpl.id : '' };
+  SETTING_IDS.forEach(id => { const el = $(id); s[id] = el.type === 'checkbox' ? el.checked : el.value; });
+  s.dsl = { slots: {}, inputs: {} };
+  $('dslSlots').querySelectorAll('input').forEach(i => { s.dsl.slots[i.dataset.slot] = i.value; });
+  $('dslInputs').querySelectorAll('input').forEach(i => { s.dsl.inputs[i.dataset.input] = i.value; });
+  return s;
+}
+function setVal(id, v) {
+  const el = $(id);
+  if (!el || v === undefined || v === null) return;
+  if (el.type === 'checkbox') { el.checked = (v === true || String(v) === 'true'); return; }
+  if (el.tagName === 'SELECT' && !Array.from(el.options).some(o => o.value === String(v))) return;
+  el.value = String(v);
+}
+function restoreAssisted(s) {
+  const tid = TPL[s.template] ? s.template : (TPL[s.transactionType] ? s.transactionType : '');
+  if (tid) $('template').value = tid;
+  setVal('transactionCategory', s.transactionCategory);
+  onTemplateChange();
+  if (tpl.kind === 'TXN') {
+    ['baseAccount', 'amount', 'amountBasis', 'paymentMethod', 'paymentAccount', 'paymentAmount', 'cogsEnabled', 'cogsAmount',
+     'vatEnabled', 'vatMode', 'customVat', 'whtEnabled', 'autoGen'].forEach(k => setVal(k, s[k]));
+    setVal('whtType', s.whtType); updateWhtObjects();
+    setVal('whtObject', s.whtObject); updateWhtRate();
+    ['whtRate', 'customWht', 'whtAmount', 'whtStatus', 'whtNoNpwp', 'whtAccount'].forEach(k => setVal(k, s[k]));
+    baseAuto = false; whtAccAuto = false;
+    updatePaymentUi(); updateVatUi(); updateWhtUi(); updateCogsUi(); updateWhtNote();
+  } else if (s.dsl) {
+    $('dslSlots').querySelectorAll('input').forEach(i => { if (s.dsl.slots && s.dsl.slots[i.dataset.slot] !== undefined) i.value = s.dsl.slots[i.dataset.slot]; });
+    $('dslInputs').querySelectorAll('input').forEach(i => { if (s.dsl.inputs && s.dsl.inputs[i.dataset.input] !== undefined) i.value = s.dsl.inputs[i.dataset.input]; });
+  }
+}
+function loadExistingDraft(id) {
+  suspend = true; setButtons(true); setMessage('Membuka draf...', '');
+  google.script.run
+    .withSuccessHandler(d => {
+      try {
+        if (!d) throw new Error('Data draf tidak dapat dimuat.');
+        currentDraftId = d.journalId || id;
+        $('pageTitle').textContent = 'Ubah draf';
+        $('idBadge').textContent = currentDraftId; $('idBadge').classList.remove('hidden');
+        $('date').value = d.date || localDate(); dateTouched = true;
+        typeTouched = true; setVal('journalType', d.journalType);
+        $('description').value = d.description || ''; $('reference').value = d.reference || '';
+        $('party').value = d.party || ''; $('taxDocNo').value = d.taxDocNo || '';
+        $('dueDate').value = d.dueDate || ''; dueTouched = !!d.dueDate;
+        setVal('documentSource', d.documentSource);
+        const mode = d.entryMode === 'ASSISTED' ? 'ASSISTED' : 'MANUAL';
+        document.querySelectorAll('input[name="entryMode"]').forEach(el => { el.checked = el.value === mode; });
+        updateModeUi();
+        if (mode === 'ASSISTED') {
+          const s = d.assistedSettings || {};
+          if (!s.transactionType && d.transactionType) s.transactionType = d.transactionType;
+          restoreAssisted(s);
+        }
+        $('openingBar').classList.toggle('hidden', !isOpening());
+        $('journalRows').innerHTML = '';
+        (d.lines || []).forEach(l => addRow({
+          accountCode: l.accountCode, debit: l.debit, credit: l.credit, description: l.description,
+          party: l.party && l.party !== d.party ? l.party : '',
+          taxMeta: { taxType: l.taxType, taxRate: l.taxRate, taxBase: l.taxBase, taxAmount: l.taxAmount }
+        }));
+        if (!(d.lines || []).length) addRow();
+        linesEdited = true; calculate();
+        setMessage('Draf ' + currentDraftId + ' telah dibuka.', 'success');
+      } catch (e) { setMessage('Gagal mengisi formulir: ' + e.message, 'error'); }
+      suspend = false; setButtons(false);
+    })
+    .withFailureHandler(e => { suspend = false; setButtons(false); setMessage('Gagal membuka draf: ' + (e.message || e), 'error'); })
+    .getDraftById(id);
+}
+
+/* ---------- Dialog ---------- */
+let dialogAction = null;
+function openDialog(title, body, okLabel, onOk, showCancel) {
+  $('dlgTitle').textContent = title; $('dlgBody').textContent = body; $('dlgOk').textContent = okLabel;
+  $('dlgCancel').classList.toggle('hidden', showCancel === false);
+  dialogAction = onOk; $('overlay').classList.remove('hidden'); $('dlgOk').focus();
+}
+function closeDialog() { $('overlay').classList.add('hidden'); dialogAction = null; }
+function setButtons(disabled) { $('draftButton').disabled = disabled; $('postButton').disabled = disabled; }
+
+/* ---------- Save and post ---------- */
+function submitJournal(action) {
+  try {
+    const isPost = action === 'POST', lines = collectLines(), mode = selectedMode();
+    const headerParty = $('party').value.trim();
+    if (headerParty && !partyByName(headerParty)) throw new Error('"' + headerParty + '" tidak ada dalam Daftar Pihak. Gunakan Tambah Baru terlebih dahulu.');
+    let method = '', paymentAccount = null, paymentAmount = 0;
+    const txnType = mode === 'ASSISTED' && tpl ? tpl.id : '';
+    if (mode === 'ASSISTED' && tpl && tpl.kind === 'TXN') {
+      method = $('paymentMethod').value;
+      if (method !== 'CREDIT') {
+        paymentAccount = accountFromInput($('paymentAccount').value);
+        if (!paymentAccount) throw new Error('Pilih akun kas atau bank.');
+      }
+      if (method === 'CASH_BANK') {
+        const ln = lines.find(x => String(x.accountCode) === String(paymentAccount.code));
+        paymentAmount = ln ? (ln.debit || ln.credit) : (lastSummary ? lastSummary.paid : 0);
+      } else if (method === 'PARTIAL') {
+        paymentAmount = parseMoney($('paymentAmount').value);
+        if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) throw new Error('Jumlah yang dibayar sekarang tidak valid.');
+      }
+    }
+    const payload = {
+      action: action, journalId: currentDraftId, date: $('date').value, journalType: $('journalType').value,
+      description: $('description').value.trim(), reference: $('reference').value.trim(), party: headerParty,
+      taxDocNo: $('taxDocNo').value.trim(), documentSource: $('documentSource').value, dueDate: $('dueDate').value,
+      entryMode: mode, origin: isOpening() ? 'OPENING' : mode, transactionType: txnType,
+      paymentMethod: method, paymentAccountCode: paymentAccount ? paymentAccount.code : '', paymentAmount: paymentAmount,
+      assistedSettings: mode === 'ASSISTED' ? collectAssistedSettings() : {}, lines: lines
+    };
+    if (!payload.date) throw new Error('Masukkan tanggal transaksi.');
+    if (!payload.description) throw new Error('Masukkan keterangan.');
+    const d = lines.reduce((s, x) => s + x.debit, 0), c = lines.reduce((s, x) => s + x.credit, 0);
+    if (isPost && (lines.length < 2 || Math.abs(d - c) > 0.005)) {
+      throw new Error('Debit dan kredit harus seimbang, dengan setidaknya dua baris, sebelum Anda posting.');
+    }
+    openDialog(isPost ? 'Posting jurnal ini?' : 'Simpan sebagai draf?',
+      isPost ? 'Jurnal akan diposting dan dihitung dalam Buku Besar dan laporan keuangan.\nJurnal yang telah diposting tidak dapat diubah.\n\nPeriksa akun, jumlah, dan dokumen pendukung terlebih dahulu.'
+        : 'Jurnal akan disimpan sebagai draf. Anda dapat mengubahnya nanti.\nDraf tidak dihitung dalam Buku Besar atau laporan keuangan.',
+      isPost ? 'Posting jurnal' : 'Simpan draf', () => saveNow(payload, isPost));
+  } catch (e) { setMessage(e.message || String(e), 'error'); }
+}
+function saveNow(payload, isPost) {
+  setButtons(true); setMessage(isPost ? 'Memproses posting...' : 'Menyimpan draf...', '');
+  google.script.run
+    .withSuccessHandler(r => {
+      openDialog(isPost ? 'Jurnal diposting' : 'Draf tersimpan',
+        'ID Jurnal: ' + r.journalId + '\nStatus: ' + r.status + '\nDibuat oleh: ' + r.createdBy +
+        (r.postedBy ? '\nDiposting oleh: ' + r.postedBy : '') + '\nTotal: Rp ' + money(r.debit),
+        'Tutup', () => google.script.host.close(), false);
+    })
+    .withFailureHandler(e => { setButtons(false); setMessage(e.message || String(e), 'error'); })
+    .saveJournal(payload);
+}
+
+/* ---------- Wiring ---------- */
+function wire() {
+  $('dlgCancel').addEventListener('click', closeDialog);
+  $('dlgOk').addEventListener('click', () => { const fn = dialogAction; closeDialog(); if (fn) fn(); });
+  $('pCancel').addEventListener('click', () => $('partyOverlay').classList.add('hidden'));
+  $('pSave').addEventListener('click', saveParty);
+  $('btnAddParty').addEventListener('click', openPartyDialog);
+  document.querySelectorAll('input[name="entryMode"]').forEach(el => el.addEventListener('change', () => {
+    updateModeUi();
+    if (selectedMode() === 'ASSISTED') { applyBaseDefault(); suggestJournalType(); scheduleAuto(); }
+  }));
+  $('journalType').addEventListener('change', () => { typeTouched = true; onJournalTypeUi(); });
+  $('date').addEventListener('change', () => { dateTouched = true; updateDue(); });
+  $('dueDate').addEventListener('input', () => { dueTouched = true; });
+  $('party').addEventListener('input', updateDue);
+  $('template').addEventListener('change', () => { onTemplateChange(); scheduleAuto(); });
+  $('transactionCategory').addEventListener('change', () => { applyBaseDefault(); updateCogsUi(); });
+  $('baseAccount').addEventListener('input', () => { baseAuto = false; $('baseHint').textContent = ''; });
+  $('whtAccount').addEventListener('input', () => { whtAccAuto = false; });
+  $('paymentMethod').addEventListener('change', () => { updatePaymentUi(); suggestJournalType(); });
+  $('vatEnabled').addEventListener('change', updateVatUi);
+  $('vatMode').addEventListener('change', updateVatUi);
+  $('whtEnabled').addEventListener('change', () => { updateWhtUi(); updateWhtNote(); });
+  $('whtType').addEventListener('change', updateWhtObjects);
+  $('whtObject').addEventListener('change', updateWhtRate);
+  $('whtRate').addEventListener('change', updateWhtUi);
+  $('whtStatus').addEventListener('change', updateWhtNote);
+  $('cogsEnabled').addEventListener('change', updateCogsUi);
+  $('assisted').addEventListener('input', scheduleAuto);
+  $('assisted').addEventListener('change', scheduleAuto);
+  // Enter in any assisted field builds the journal lines right away
+  $('assisted').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') {
+      e.preventDefault(); clearTimeout(genTimer); generate();
+    }
+  });
+  document.querySelectorAll('.money').forEach(el => el.addEventListener('blur', () => {
+    const n = parseMoney(el.value); if (Number.isFinite(n) && n !== 0) el.value = money(n);
+  }));
+  $('btnGenerate').addEventListener('click', generate);
+  $('btnAddLine').addEventListener('click', () => { linesEdited = true; addRow(); });
+  $('btnLoadBs').addEventListener('click', loadBsAccounts);
+  $('btnPlug').addEventListener('click', plugOpening);
+  $('draftButton').addEventListener('click', () => submitJournal('DRAFT'));
+  $('postButton').addEventListener('click', () => submitJournal('POST'));
+}
+
+function init() {
+  $('date').value = localDate();
+  const banner = $('modeBanner');
+  banner.textContent = APP_MODE === 'LIVE' ? 'MODE LANGSUNG' : 'MODE LATIHAN — bukan data perusahaan';
+  banner.className = APP_MODE === 'LIVE' ? 'mode-banner live' : 'mode-banner';
+  wire(); setButtons(true);
+  google.script.run
+    .withSuccessHandler(cfg => {
+      CFG = cfg; accounts = cfg.accounts || []; parties = cfg.parties || []; TAX = cfg.tax || TAX;
+      fillLists(); fillJournalTypes(cfg.journalTypes || []); fillTemplates(cfg.templates || []);
+      $('journalType').value = 'General Journal';
+      onJournalTypeUi();
+      $('pageSub').textContent = (cfg.company ? cfg.company + ', ' : '') + 'bisnis ' + visibleLabel(cfg.businessType.toLowerCase()) + '. ' +
+        accounts.length + ' akun aktif, ' + parties.length + ' pelanggan dan pemasok.';
+      onTemplateChange(); setButtons(false);
+      if (currentDraftId) loadExistingDraft(currentDraftId);
+      else { addRow(); addRow(); calculate(); suspend = false; setMessage('', ''); }
+    })
+    .withFailureHandler(e => setMessage(e.message || String(e), 'error'))
+    .getAppConfig();
+}
+init();
+</script>
+</body>
+</html>

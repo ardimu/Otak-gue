@@ -95,6 +95,15 @@
     padding: 2px 0;
   }
 
+  .submenu .submenu-toggle {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .submenu .submenu {
+    margin-left: 12px;
+  }
+
   .submenu-item {
     display: block;
     width: 100%;

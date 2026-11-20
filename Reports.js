@@ -67,10 +67,18 @@ function computeReports_(posted, coa, period, m0, meta) {
   const isPL = a => !isBs_(sec.get(a.code));
   const plAccs = accs.filter(a => isPL(a)), bsAccs = accs.filter(a => !isPL(a));
   const label = meta.label, co = meta.company || '';
+  const labelId = meta.labelId || label.replace('For the month ended ', 'Untuk bulan yang berakhir pada ');
+  const displayLabel = tr_(label, labelId);
+  const bsLabel = meta.bsLabel || tr_(label.replace('For ', 'As at end of '), labelId.replace('Untuk bulan yang berakhir pada ', 'Pada akhir bulan '));
+  const eqLabel = meta.eqLabel || tr_(label.replace(/^For .* ended/, 'Year to date to'), labelId.replace(/^Untuk bulan yang berakhir pada/, 'Sampai dengan tahun berjalan pada'));
   const warnings = [];
   accs.filter(a => sec.get(a.code) === '?' && (tx.get(a.code) || []).length).forEach(a =>
-    warnings.push(`Account ${a.code} ${a.name} has an unknown Account Type or Category ("${a.type}" / "${a.category}"). It is left out of the statements.`));
-  if (unknown.size) warnings.push('Journal lines use account codes that are not in the COA: ' + Array.from(unknown).join(', ') + '.');
+    warnings.push(tr_(
+      `Account ${a.code} ${a.name} has an unknown Account Type or Category ("${a.type}" / "${a.category}"). It is left out of the statements.`,
+      `Akun ${a.code} ${a.name} memiliki Jenis Akun atau Kategori yang tidak dikenal ("${a.type}" / "${a.category}"). Akun ini tidak disertakan dalam laporan.`
+    )));
+  if (unknown.size) warnings.push(tr_('Journal lines use account codes that are not in the COA: ' + Array.from(unknown).join(', ') + '.',
+    'Baris jurnal menggunakan kode akun yang tidak ada dalam Daftar Akun: ' + Array.from(unknown).join(', ') + '.'));
 
   /* ---------- Trial balance ---------- */
   const tbRows = [];
@@ -85,13 +93,18 @@ function computeReports_(posted, coa, period, m0, meta) {
     T.od += row[2]; T.oc += row[3]; T.md += row[4]; T.mc += row[5]; T.ed += row[6]; T.ec += row[7];
     tbRows.push({ k: 'l', c: row });
   });
-  tbRows.push({ k: 't', c: ['', 'Total', r2_(T.od), r2_(T.oc), r2_(T.md), r2_(T.mc), r2_(T.ed), r2_(T.ec)] });
+  tbRows.push({ k: 't', c: ['', tr_('Total', 'Total'), r2_(T.od), r2_(T.oc), r2_(T.md), r2_(T.mc), r2_(T.ed), r2_(T.ec)] });
   const tbDiff = r2_(T.ed - T.ec);
-  tbRows.push({ k: tbDiff ? 'x' : 'n', c: ['', tbDiff ? 'WARNING: the trial balance does not balance. Difference: ' + tbDiff : 'Check: debits equal credits.'] });
+  tbRows.push({ k: tbDiff ? 'x' : 'n', c: ['', tbDiff
+    ? tr_('WARNING: the trial balance does not balance. Difference: ' + tbDiff, 'PERINGATAN: neraca saldo tidak seimbang. Selisih: ' + tbDiff)
+    : tr_('Check: debits equal credits.', 'Periksa: debit sama dengan kredit.')] });
   if (plAccs.some(a => r2_(net(a.code, 0, prev(fys))) !== 0)) {
-    tbRows.push({ k: 'n', c: ['', 'Profit and loss accounts still carry balances from earlier financial years. They stay in the ledger until closing entries move them to retained earnings.'] });
+    tbRows.push({ k: 'n', c: ['', tr_('Profit and loss accounts still carry balances from earlier financial years. They stay in the ledger until closing entries move them to retained earnings.',
+      'Akun laba dan rugi masih memiliki saldo dari tahun buku sebelumnya. Akun tersebut tetap ada dalam buku besar hingga jurnal penutup memindahkannya ke Laba Ditahan.')] });
   }
-  const tb = { title: co + ' - Trial Balance', subtitle: label, header: ['Code', 'Account', 'Opening debit', 'Opening credit', 'Movement debit', 'Movement credit', 'Ending debit', 'Ending credit'],
+  const tb = { title: co + ' - ' + tr_('Trial Balance', 'Neraca Saldo'), subtitle: displayLabel,
+    header: [tr_('Code', 'Kode'), tr_('Account', 'Akun'), tr_('Opening debit', 'Saldo Awal Debit'), tr_('Opening credit', 'Saldo Awal Kredit'),
+      tr_('Movement debit', 'Mutasi Debit'), tr_('Movement credit', 'Mutasi Kredit'), tr_('Ending debit', 'Saldo Akhir Debit'), tr_('Ending credit', 'Saldo Akhir Kredit')],
     rows: tbRows, numFrom: 3, decimals: 2, widths: [80, 320, 120, 120, 120, 120, 120, 120], diff: tbDiff };
 
   /* ---------- General ledger ---------- */
@@ -103,31 +116,40 @@ function computeReports_(posted, coa, period, m0, meta) {
     const sign = a.normal === 'CREDIT' ? -1 : 1;
     let bal = open * sign;
     glRows.push({ k: 'h', c: [a.code + ' - ' + a.name] });
-    glRows.push({ k: 'l', c: ['', '', '', '', 'Opening balance', '', '', '', r2_(bal)] });
+    glRows.push({ k: 'l', c: ['', '', '', '', tr_('Opening balance', 'Saldo Awal'), '', '', '', r2_(bal)] });
     list.forEach(r => {
       bal += (r.debit - r.credit) * sign;
       glRows.push({ k: 'l', c: [r.date, r.id, r.type, r.ref, r.ldesc || r.desc, r.party, r.debit ? r2_(r.debit) : '', r.credit ? r2_(r.credit) : '', r2_(bal)] });
     });
-    glRows.push({ k: 's', c: ['', '', '', '', 'Ending balance', '', r2_(sum(list, r => r.debit)), r2_(sum(list, r => r.credit)), r2_(bal)] });
+    glRows.push({ k: 's', c: ['', '', '', '', tr_('Ending balance', 'Saldo Akhir'), '', r2_(sum(list, r => r.debit)), r2_(sum(list, r => r.credit)), r2_(bal)] });
   });
-  const gl = { title: co + ' - General Ledger', subtitle: label, header: ['Date', 'Journal ID', 'Type', 'Reference', 'Description', 'Customer / Supplier', 'Debit', 'Credit', 'Balance'],
+  const gl = { title: co + ' - ' + tr_('General Ledger', 'Buku Besar'), subtitle: displayLabel,
+    header: [tr_('Date', 'Tanggal'), tr_('Journal ID', 'ID Jurnal'), tr_('Type', 'Jenis'), tr_('Reference', 'Referensi'), tr_('Description', 'Keterangan'),
+      tr_('Customer / Supplier', 'Pelanggan / Pemasok'), tr_('Debit', 'Debit'), tr_('Credit', 'Kredit'), tr_('Balance', 'Saldo')],
     rows: glRows, numFrom: 7, decimals: 2, widths: [95, 120, 170, 120, 300, 160, 110, 110, 120], dateCol: 1 };
 
   /* ---------- Income statement ---------- */
   const cols = [[period, period], [fys, period]];
   const plNet = (a, c) => net(a.code, c[0], c[1], NO_FLOW);
   const groupsOf = s => Array.from(new Set(accs.filter(a => sec.get(a.code) === s).map(a => a.group)));
-  const secDef = [['REV', 'Revenue', -1], ['CONTRA', 'Sales adjustments', -1], ['COS', 'Cost of sales', 1], ['OPEX', 'Operating expenses', 1],
-    ['OI', 'Other income', -1], ['OX', 'Other expenses', 1], ['TAX', 'Income tax expense', 1]];
+  const secDef = [
+    ['REV', tr_('Revenue', 'Pendapatan'), -1, tr_('Total revenue', 'Total Pendapatan')],
+    ['CONTRA', tr_('Sales adjustments', 'Penyesuaian Penjualan'), -1, tr_('Total sales adjustments', 'Total Penyesuaian Penjualan')],
+    ['COS', tr_('Cost of sales', 'Beban Pokok Penjualan'), 1, tr_('Total cost of sales', 'Total Beban Pokok Penjualan')],
+    ['OPEX', tr_('Operating expenses', 'Beban Operasional'), 1, tr_('Total operating expenses', 'Total Beban Operasional')],
+    ['OI', tr_('Other income', 'Pendapatan Lain-lain'), -1, tr_('Total other income', 'Total Pendapatan Lain-lain')],
+    ['OX', tr_('Other expenses', 'Beban Lain-lain'), 1, tr_('Total other expenses', 'Total Beban Lain-lain')],
+    ['TAX', tr_('Income tax expense', 'Beban Pajak Penghasilan'), 1, tr_('Total income tax expense', 'Total Beban Pajak Penghasilan')]
+  ];
   const tot = {};
   const isRows = [];
   const pair = f => cols.map(c => r2_(f(c)));
   const computed = {
-    CONTRA: ['Net revenue', () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i])],
-    COS: ['Gross profit', () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i])],
-    OPEX: ['Operating profit', () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i])],
-    OX: ['Profit before income tax', () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i] + tot.OI[i] - tot.OX[i])],
-    TAX: ['Net profit', () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i] + tot.OI[i] - tot.OX[i] - tot.TAX[i])]
+    CONTRA: [tr_('Net revenue', 'Pendapatan Bersih'), () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i])],
+    COS: [tr_('Gross profit', 'Laba Kotor'), () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i])],
+    OPEX: [tr_('Operating profit', 'Laba Operasional'), () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i])],
+    OX: [tr_('Profit before income tax', 'Laba sebelum pajak penghasilan'), () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i] + tot.OI[i] - tot.OX[i])],
+    TAX: [tr_('Net profit', 'Laba Bersih'), () => [0, 1].map(i => tot.REV[i] + tot.CONTRA[i] - tot.COS[i] - tot.OPEX[i] + tot.OI[i] - tot.OX[i] - tot.TAX[i])]
   };
   let netProfit = [0, 0];
   secDef.forEach(d => {
@@ -141,7 +163,7 @@ function computeReports_(posted, coa, period, m0, meta) {
     if (lines.length) {
       isRows.push({ k: 'h', c: [d[1]] });
       lines.forEach(l => isRows.push({ k: 'l', c: ['   ' + l[0], l[1], l[2]] }));
-      isRows.push({ k: 's', c: ['Total ' + d[1].toLowerCase(), tot[d[0]][0], tot[d[0]][1]] });
+      isRows.push({ k: 's', c: [d[3], tot[d[0]][0], tot[d[0]][1]] });
     }
     if (computed[d[0]]) {
       const v = computed[d[0]][1]().map(r2_);
@@ -150,7 +172,9 @@ function computeReports_(posted, coa, period, m0, meta) {
     }
   });
   warnings.forEach(w => isRows.push({ k: 'x', c: [w] }));
-  const is = { title: co + ' - Income Statement', subtitle: label, header: ['', 'This month', 'Year to date'], rows: isRows, numFrom: 2, decimals: 0, widths: [380, 140, 140], net: netProfit };
+  const is = { title: co + ' - ' + tr_('Income Statement', 'Laporan Laba Rugi'), subtitle: displayLabel,
+    header: ['', tr_('This month', 'Bulan Ini'), tr_('Year to date', 'Sampai dengan Tahun Berjalan')],
+    rows: isRows, numFrom: 2, decimals: 0, widths: [380, 140, 140], net: netProfit };
 
   /* ---------- Balance sheet ---------- */
   const bsAt = P => {
@@ -162,7 +186,7 @@ function computeReports_(posted, coa, period, m0, meta) {
   const B = [bsAt(period), bsAt(pm)];
   const bsRows = [];
   const bsTot = {};
-  const bsSection = (s, title, sign) => {
+  const bsSection = (s, title, sign, totalLabel) => {
     const lines = [];
     groupsOf(s).forEach(g => {
       const list = accs.filter(a => sec.get(a.code) === s && a.group === g);
@@ -171,29 +195,35 @@ function computeReports_(posted, coa, period, m0, meta) {
     });
     if (s === 'EQ') {
       const pr = B.map(b => r2_(b.prior)), cu = B.map(b => r2_(b.cur));
-      if (pr[0] || pr[1]) lines.push(["Prior years' profit not yet closed to retained earnings", pr[0], pr[1]]);
-      if (cu[0] || cu[1]) lines.push(['Current year profit or loss', cu[0], cu[1]]);
+      if (pr[0] || pr[1]) lines.push([tr_("Prior years' profit not yet closed to retained earnings", "Laba tahun-tahun sebelumnya yang belum ditutup ke Laba Ditahan"), pr[0], pr[1]]);
+      if (cu[0] || cu[1]) lines.push([tr_('Current year profit or loss', 'Laba atau rugi tahun berjalan'), cu[0], cu[1]]);
     }
     bsTot[s] = [r2_(sum(lines, l => l[1])), r2_(sum(lines, l => l[2]))];
     if (lines.length) {
       bsRows.push({ k: 'h', c: [title] });
       lines.forEach(l => bsRows.push({ k: 'l', c: ['   ' + l[0], l[1], l[2]] }));
-      bsRows.push({ k: 's', c: ['Total ' + title.toLowerCase(), bsTot[s][0], bsTot[s][1]] });
+      bsRows.push({ k: 's', c: [totalLabel, bsTot[s][0], bsTot[s][1]] });
     }
   };
-  bsSection('CA', 'Current assets', 1); bsSection('NCA', 'Non-current assets', 1);
+  bsSection('CA', tr_('Current assets', 'Aset Lancar'), 1, tr_('Total current assets', 'Total Aset Lancar'));
+  bsSection('NCA', tr_('Non-current assets', 'Aset Tidak Lancar'), 1, tr_('Total non-current assets', 'Total Aset Tidak Lancar'));
   const ta = [0, 1].map(i => r2_(bsTot.CA[i] + bsTot.NCA[i]));
-  bsRows.push({ k: 't', c: ['Total assets', ta[0], ta[1]] });
-  bsSection('CL', 'Current liabilities', -1); bsSection('NCL', 'Non-current liabilities', -1);
+  bsRows.push({ k: 't', c: [tr_('Total assets', 'Total Aset'), ta[0], ta[1]] });
+  bsSection('CL', tr_('Current liabilities', 'Liabilitas Lancar'), -1, tr_('Total current liabilities', 'Total Liabilitas Lancar'));
+  bsSection('NCL', tr_('Non-current liabilities', 'Liabilitas Tidak Lancar'), -1, tr_('Total non-current liabilities', 'Total Liabilitas Tidak Lancar'));
   const tl = [0, 1].map(i => r2_(bsTot.CL[i] + bsTot.NCL[i]));
-  bsRows.push({ k: 's', c: ['Total liabilities', tl[0], tl[1]] });
-  bsSection('EQ', 'Equity', -1);
+  bsRows.push({ k: 's', c: [tr_('Total liabilities', 'Total Liabilitas'), tl[0], tl[1]] });
+  bsSection('EQ', tr_('Equity', 'Ekuitas'), -1, tr_('Total equity', 'Total Ekuitas'));
   const tle = [0, 1].map(i => r2_(tl[i] + bsTot.EQ[i]));
-  bsRows.push({ k: 't', c: ['Total liabilities and equity', tle[0], tle[1]] });
+  bsRows.push({ k: 't', c: [tr_('Total liabilities and equity', 'Total Liabilitas dan Ekuitas'), tle[0], tle[1]] });
   const bsDiff = [0, 1].map(i => r2_(ta[i] - tle[i]));
-  bsRows.push({ k: bsDiff[0] || bsDiff[1] ? 'x' : 'n', c: [bsDiff[0] || bsDiff[1] ? 'WARNING: assets do not equal liabilities plus equity. Difference: ' + bsDiff[0] : 'Check: assets equal liabilities plus equity.', bsDiff[0], bsDiff[1]] });
+  bsRows.push({ k: bsDiff[0] || bsDiff[1] ? 'x' : 'n', c: [bsDiff[0] || bsDiff[1]
+    ? tr_('WARNING: assets do not equal liabilities plus equity. Difference: ' + bsDiff[0], 'PERINGATAN: aset tidak sama dengan liabilitas ditambah ekuitas. Selisih: ' + bsDiff[0])
+    : tr_('Check: assets equal liabilities plus equity.', 'Periksa: aset sama dengan liabilitas ditambah ekuitas.'), bsDiff[0], bsDiff[1]] });
   warnings.forEach(w => bsRows.push({ k: 'x', c: [w] }));
-  const bs = { title: co + ' - Balance Sheet', subtitle: label.replace('For ', 'As at end of '), header: ['', 'This month end', 'Previous month end'], rows: bsRows, numFrom: 2, decimals: 0, widths: [420, 150, 150], ta: ta, tl: tl, te: bsTot.EQ, diff: bsDiff[0] };
+  const bs = { title: co + ' - ' + tr_('Balance Sheet', 'Neraca'), subtitle: bsLabel,
+    header: ['', tr_('This month end', 'Akhir Bulan Ini'), tr_('Previous month end', 'Akhir Bulan Sebelumnya')],
+    rows: bsRows, numFrom: 2, decimals: 0, widths: [420, 150, 150], ta: ta, tl: tl, te: bsTot.EQ, diff: bsDiff[0] };
 
   /* ---------- Equity changes (year to date) ---------- */
   const eqAccs = accs.filter(a => sec.get(a.code) === 'EQ');
@@ -208,16 +238,19 @@ function computeReports_(posted, coa, period, m0, meta) {
   const mvOther = -sum(otherEq, a => net(a.code, fys, period, NO_FLOW));
   const closeCap = openCap + mvCap, closeRe = openRe + mvProfit + mvDist + mvOther;
   const eqRows = [
-    { k: 'l', c: ['Balance at start of the financial year', r2_(openCap), r2_(openRe), r2_(openCap + openRe)] },
-    { k: 'l', c: ['Profit for the year to date', '', r2_(mvProfit), r2_(mvProfit)] },
-    { k: 'l', c: ['Capital contributed or returned', r2_(mvCap), '', r2_(mvCap)] },
-    { k: 'l', c: ['Owner withdrawals and dividends', '', r2_(mvDist), r2_(mvDist)] },
-    { k: 'l', c: ['Other movements in equity', '', r2_(mvOther), r2_(mvOther)] },
-    { k: 't', c: ['Balance at end of the period', r2_(closeCap), r2_(closeRe), r2_(closeCap + closeRe)] }
+    { k: 'l', c: [tr_('Balance at start of the financial year', 'Saldo pada awal tahun buku'), r2_(openCap), r2_(openRe), r2_(openCap + openRe)] },
+    { k: 'l', c: [tr_('Profit for the year to date', 'Laba untuk tahun berjalan'), '', r2_(mvProfit), r2_(mvProfit)] },
+    { k: 'l', c: [tr_('Capital contributed or returned', 'Modal yang disetor atau dikembalikan'), r2_(mvCap), '', r2_(mvCap)] },
+    { k: 'l', c: [tr_('Owner withdrawals and dividends', 'Penarikan pemilik dan dividen'), '', r2_(mvDist), r2_(mvDist)] },
+    { k: 'l', c: [tr_('Other movements in equity', 'Pergerakan ekuitas lainnya'), '', r2_(mvOther), r2_(mvOther)] },
+    { k: 't', c: [tr_('Balance at end of the period', 'Saldo pada akhir periode'), r2_(closeCap), r2_(closeRe), r2_(closeCap + closeRe)] }
   ];
   const eqDiff = r2_(closeCap + closeRe - bsTot.EQ[0]);
-  eqRows.push({ k: eqDiff ? 'x' : 'n', c: [eqDiff ? 'WARNING: closing equity differs from the balance sheet by ' + eqDiff : 'Check: closing equity agrees with the balance sheet.'] });
-  const eq = { title: co + ' - Statement of Changes in Equity', subtitle: label.replace(/^For .* ended/, 'Year to date to'), header: ['', 'Contributed capital', 'Retained earnings and other', 'Total equity'],
+  eqRows.push({ k: eqDiff ? 'x' : 'n', c: [eqDiff
+    ? tr_('WARNING: closing equity differs from the balance sheet by ' + eqDiff, 'PERINGATAN: saldo akhir ekuitas berbeda dengan neraca sebesar ' + eqDiff)
+    : tr_('Check: closing equity agrees with the balance sheet.', 'Periksa: saldo akhir ekuitas sesuai dengan neraca.')] });
+  const eq = { title: co + ' - ' + tr_('Statement of Changes in Equity', 'Laporan Perubahan Ekuitas'), subtitle: eqLabel,
+    header: ['', tr_('Contributed capital', 'Modal Disetor'), tr_('Retained earnings and other', 'Laba Ditahan dan Lainnya'), tr_('Total equity', 'Total Ekuitas')],
     rows: eqRows, numFrom: 2, decimals: 0, widths: [380, 150, 190, 150], closing: closeCap + closeRe, diff: eqDiff };
 
   /* ---------- Cash flow (indirect) ---------- */
@@ -245,17 +278,20 @@ function computeReports_(posted, coa, period, m0, meta) {
       const list = bsAccs.filter(a => bucket(a) === b && a.group === g);
       const first = list[0], s = sec.get(first.code);
       const v = cfPair(c => effect(list, c));
-      if (v[0] || v[1]) lines.push([(b === 'OPS' ? (s === 'CA' ? '(Increase) or decrease in ' : 'Increase or (decrease) in ') : (b === 'INV' ? 'Net movement in ' : 'Net movement in ')) + g.toLowerCase(), v[0], v[1]]);
+      const prefix = b === 'OPS'
+        ? (s === 'CA' ? tr_('(Increase) or decrease in ', '(Kenaikan) atau penurunan ') : tr_('Increase or (decrease) in ', 'Kenaikan atau (penurunan) '))
+        : tr_('Net movement in ', 'Pergerakan bersih ');
+      if (v[0] || v[1]) lines.push([prefix + g.toLowerCase(), v[0], v[1]]);
     });
     return lines;
   };
-  const opLines = [['Net profit', netProfit[0], netProfit[1]]];
-  if (dep[0] || dep[1]) opLines.push(['Add back depreciation and amortization', dep[0], dep[1]]);
-  if (gain[0] || gain[1]) opLines.push(['Remove gain or loss on disposal of assets', -gain[0], -gain[1]]);
+  const opLines = [[tr_('Net profit', 'Laba Bersih'), netProfit[0], netProfit[1]]];
+  if (dep[0] || dep[1]) opLines.push([tr_('Add back depreciation and amortization', 'Ditambahkan kembali penyusutan dan amortisasi'), dep[0], dep[1]]);
+  if (gain[0] || gain[1]) opLines.push([tr_('Remove gain or loss on disposal of assets', 'Dikurangi keuntungan atau kerugian pelepasan aset'), -gain[0], -gain[1]]);
   sectionLines('OPS').forEach(l => opLines.push(l));
   const invLines = sectionLines('INV');
-  if (dep[0] || dep[1]) invLines.push(['Less: depreciation and amortization added back in operating activities', -dep[0], -dep[1]]);
-  if (gain[0] || gain[1]) invLines.push(['Gain or loss on disposal included in proceeds', gain[0], gain[1]]);
+  if (dep[0] || dep[1]) invLines.push([tr_('Less: depreciation and amortization added back in operating activities', 'Dikurangi: penyusutan dan amortisasi yang ditambahkan kembali pada aktivitas operasi'), -dep[0], -dep[1]]);
+  if (gain[0] || gain[1]) invLines.push([tr_('Gain or loss on disposal included in proceeds', 'Keuntungan atau kerugian pelepasan aset yang termasuk dalam penerimaan'), gain[0], gain[1]]);
   const finLines = sectionLines('FIN');
   const block = (title, lines, totalLabel) => {
     cfRows.push({ k: 'h', c: [title] });
@@ -264,19 +300,23 @@ function computeReports_(posted, coa, period, m0, meta) {
     cfRows.push({ k: 's', c: [totalLabel, t[0], t[1]] });
     return t;
   };
-  const op = block('Operating activities', opLines, 'Net cash from operating activities');
-  const inv = block('Investing activities', invLines, 'Net cash from investing activities');
-  const fin = block('Financing activities', finLines, 'Net cash from financing activities');
+  const op = block(tr_('Operating activities', 'Aktivitas Operasi'), opLines, tr_('Net cash from operating activities', 'Kas bersih dari aktivitas operasi'));
+  const inv = block(tr_('Investing activities', 'Aktivitas Investasi'), invLines, tr_('Net cash from investing activities', 'Kas bersih dari aktivitas investasi'));
+  const fin = block(tr_('Financing activities', 'Aktivitas Pendanaan'), finLines, tr_('Net cash from financing activities', 'Kas bersih dari aktivitas pendanaan'));
   const netChange = [0, 1].map(i => r2_(op[i] + inv[i] + fin[i]));
   const cashAccs = bsAccs.filter(isCash);
   const cashNet = cfPair(c => sum(cashAccs, a => net(a.code, c[0], c[1], NO_FLOW)));
   const cashEnd = r2_(sum(cashAccs, a => net(a.code, 0, period)));
-  cfRows.push({ k: 't', c: ['Net increase or (decrease) in cash', netChange[0], netChange[1]] });
-  cfRows.push({ k: 'l', c: ['Cash and cash equivalents at the start of the period', r2_(cashEnd - cashNet[0]), r2_(cashEnd - cashNet[1])] });
-  cfRows.push({ k: 't', c: ['Cash and cash equivalents at the end of the period', cashEnd, cashEnd] });
+  cfRows.push({ k: 't', c: [tr_('Net increase or (decrease) in cash', 'Kenaikan atau (penurunan) kas bersih'), netChange[0], netChange[1]] });
+  cfRows.push({ k: 'l', c: [tr_('Cash and cash equivalents at the start of the period', 'Kas dan setara kas pada awal periode'), r2_(cashEnd - cashNet[0]), r2_(cashEnd - cashNet[1])] });
+  cfRows.push({ k: 't', c: [tr_('Cash and cash equivalents at the end of the period', 'Kas dan setara kas pada akhir periode'), cashEnd, cashEnd] });
   const cfDiff = [0, 1].map(i => r2_(netChange[i] - cashNet[i]));
-  cfRows.push({ k: cfDiff[0] || cfDiff[1] ? 'x' : 'n', c: [cfDiff[0] || cfDiff[1] ? 'WARNING: the cash flow differs from the actual cash movement. Check unmapped accounts.' : 'Check: the cash flow agrees with the change in cash and bank accounts.', cfDiff[0], cfDiff[1]] });
-  const cf = { title: co + ' - Cash Flow Statement (indirect method)', subtitle: label, header: ['', 'This month', 'Year to date'], rows: cfRows, numFrom: 2, decimals: 0, widths: [460, 140, 140], diff: cfDiff, net: netChange };
+  cfRows.push({ k: cfDiff[0] || cfDiff[1] ? 'x' : 'n', c: [cfDiff[0] || cfDiff[1]
+    ? tr_('WARNING: the cash flow differs from the actual cash movement. Check unmapped accounts.', 'PERINGATAN: arus kas berbeda dengan pergerakan kas sebenarnya. Periksa akun yang belum dipetakan.')
+    : tr_('Check: the cash flow agrees with the change in cash and bank accounts.', 'Periksa: arus kas sesuai dengan perubahan akun kas dan bank.'), cfDiff[0], cfDiff[1]] });
+  const cf = { title: co + ' - ' + tr_('Cash Flow Statement (indirect method)', 'Laporan Arus Kas (metode tidak langsung)'), subtitle: displayLabel,
+    header: ['', tr_('This month', 'Bulan Ini'), tr_('Year to date', 'Sampai dengan Tahun Berjalan')],
+    rows: cfRows, numFrom: 2, decimals: 0, widths: [460, 140, 140], diff: cfDiff, net: netChange };
 
   return { tb: tb, gl: gl, is: is, bs: bs, eq: eq, cf: cf, warnings: warnings };
 }
@@ -287,16 +327,19 @@ function computeReports_(posted, coa, period, m0, meta) {
 ============================================================ */
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_NAMES_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
 function generateReports() {
   const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getDocumentProperties();
   const now = new Date();
   const def = props.getProperty('REPORT_PERIOD') || (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
-  const res = ui.prompt('Generate reports', 'Which month? Enter it as YYYY-MM, for example 2026-11.\nOnly posted journals are included.', ui.ButtonSet.OK_CANCEL);
+  const res = ui.prompt(tr_('Generate reports', 'Buat Laporan'),
+    tr_('Which month? Enter it as YYYY-MM, for example 2026-11.\nOnly posted journals are included.',
+      'Bulan yang mana? Masukkan dalam format YYYY-MM, misalnya 2026-11.\nHanya jurnal yang sudah diposting yang disertakan.'), ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
   const text = String(res.getResponseText() || def).trim();
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(text)) { ui.alert('Enter the month as YYYY-MM, for example 2026-11.'); return; }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(text)) { ui.alert(tr_('Enter the month as YYYY-MM, for example 2026-11.', 'Masukkan bulan dalam format YYYY-MM, misalnya 2026-11.')); return; }
   props.setProperty('REPORT_PERIOD', text);
   runReports_(text);
 }
@@ -331,8 +374,12 @@ function runReports_(text) {
   const period = Number(text.replace('-', ''));
   const settings = readSettings_();
   const m0 = Number(settings['Fiscal Year Start Month']) || 1;
-  const monthName = MONTH_NAMES[period % 100 - 1] + ' ' + Math.floor(period / 100);
-  const meta = { company: settings['Company Name'] || '', label: 'For the month ended ' + monthName };
+  const year = Math.floor(period / 100), mi = period % 100 - 1;
+  const monthEn = MONTH_NAMES[mi] + ' ' + year, monthId = MONTH_NAMES_ID[mi] + ' ' + year;
+  const label = tr_('For the month ended ' + monthEn, 'Untuk bulan yang berakhir pada ' + monthId);
+  const bsLabel = tr_('As at end of the month ended ' + monthEn, 'Pada akhir bulan ' + monthId);
+  const eqLabel = tr_('Year to date to ' + monthEn, 'Sampai dengan tahun berjalan pada ' + monthId);
+  const meta = { company: settings['Company Name'] || '', label: label, bsLabel: bsLabel, eqLabel: eqLabel };
   const reports = computeReports_(loadPostedForReports_(), readCoa_(), period, m0, meta);
   writeReport_('Trial Balance', reports.tb);
   writeReport_('General Ledger', reports.gl);
@@ -341,13 +388,17 @@ function runReports_(text) {
   writeReport_('Equity Changes', reports.eq);
   writeReport_('Cash Flow', reports.cf);
   const checks = [
-    'Trial balance: ' + (reports.tb.diff ? 'DOES NOT BALANCE (' + reports.tb.diff + ')' : 'balanced'),
-    'Balance sheet: ' + (reports.bs.diff ? 'DOES NOT BALANCE (' + reports.bs.diff + ')' : 'balanced'),
-    'Equity statement agrees with balance sheet: ' + (reports.eq.diff ? 'NO (' + reports.eq.diff + ')' : 'yes'),
-    'Cash flow agrees with cash and bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'NO' : 'yes')
+    tr_('Trial balance: ' + (reports.tb.diff ? 'DOES NOT BALANCE (' + reports.tb.diff + ')' : 'balanced'),
+      'Neraca Saldo: ' + (reports.tb.diff ? 'TIDAK SEIMBANG (' + reports.tb.diff + ')' : 'seimbang')),
+    tr_('Balance sheet: ' + (reports.bs.diff ? 'DOES NOT BALANCE (' + reports.bs.diff + ')' : 'balanced'),
+      'Neraca: ' + (reports.bs.diff ? 'TIDAK SEIMBANG (' + reports.bs.diff + ')' : 'seimbang')),
+    tr_('Equity statement agrees with balance sheet: ' + (reports.eq.diff ? 'NO (' + reports.eq.diff + ')' : 'yes'),
+      'Laporan perubahan ekuitas sesuai dengan neraca: ' + (reports.eq.diff ? 'TIDAK (' + reports.eq.diff + ')' : 'ya')),
+    tr_('Cash flow agrees with cash and bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'NO' : 'yes'),
+      'Arus kas sesuai dengan kas dan bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'TIDAK' : 'ya'))
   ];
-  ui.alert('Reports for ' + monthName, checks.concat(reports.warnings).join('\n') +
-    '\n\nSheets: ' + REPORT_SHEETS.join(', ') + '.', ui.ButtonSet.OK);
+  ui.alert(tr_('Reports for ' + monthEn, 'Laporan untuk bulan ' + monthId), checks.concat(reports.warnings).join('\n') +
+    tr_('\n\nSheets: ', '\n\nLembar: ') + REPORT_SHEETS.join(', ') + '.', ui.ButtonSet.OK);
   SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Income Statement'));
 }
 
@@ -367,13 +418,13 @@ function writeReport_(name, rep) {
   } else sh = ss.insertSheet(name);
   const settings = readSettings_();
   const mode = getCompanyMode_();
-  const banner = mode === 'LIVE' ? 'LIVE MODE' : 'PRACTICE MODE — not company data';
+  const banner = mode === 'LIVE' ? tr_('LIVE MODE', 'MODE LANGSUNG') : tr_('PRACTICE MODE — not company data', 'MODE LATIHAN — bukan data perusahaan');
   const npwp = settings['NPWP'] || '';
   const width = rep.header.length;
   const pad = c => c.concat(new Array(width - c.length).fill(''));
   const data = [
     pad([rep.title]),
-    pad([npwp ? 'NPWP: ' + npwp : '']),
+    pad([npwp ? tr_('NPWP: ', 'NPWP: ') + npwp : '']),
     pad([banner]),
     pad([rep.subtitle]),
     pad([]),

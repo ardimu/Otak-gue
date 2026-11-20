@@ -89,6 +89,11 @@ const ACCOUNT_MAPPINGS = [
   ['openingEquity', 'Opening Balance Equity', '3302']
 ];
 
+const PARTY_ACCOUNT_GROUPS = {
+  Customer: ['Trade Receivables', 'Other Receivables', 'Customer Advances'],
+  Supplier: ['Trade Payables', 'Purchase Advances', 'Other Payables']
+};
+
 const GENERAL_SETTINGS = [
   ['Company Name', 'My Company', 'Shown on report headers.'],
   ['Legal Name', '', 'Legal entity name used on official documents.'],
@@ -104,6 +109,7 @@ const GENERAL_SETTINGS = [
   ['Currency', 'IDR', ''],
   ['Bank Suspense Account', '', 'Optional. Account code for bank lines you cannot classify yet. Leave blank to choose an account for every line.'],
   ['Lock Date', '', 'Optional. Journals dated on or before this date cannot be posted or edited (YYYY-MM-DD). Leave blank for no lock.'],
+  ['Language', 'English', 'English or Bahasa Indonesia. Managed in the accounting menu.'],
   ['Mode', 'PRACTICE', 'PRACTICE or LIVE. Managed in Company Profile & Settings.'],
   ['Go Live Date', '', 'Date when the system moved to LIVE.'],
   ['Went Live By', '', 'User who moved the system to LIVE.']
@@ -285,10 +291,11 @@ const COA_HEADERS = [
 ============================================================ */
 
 function onOpen() {
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi()
-    .createMenu('ACCOUNTING')
-    .addItem('Open Accounting Menu', 'showAccountingMenu')
-    .addItem('Company Profile & Settings', 'showCompanySettings')
+    .createMenu('Menu')
+    .addItem(indonesian ? 'Akuntansi' : 'Accounting', 'showAccountingMenu')
+    .addItem(indonesian ? 'Profil & Pengaturan Perusahaan' : 'Company Profile & Settings', 'showCompanySettings')
     .addToUi();
 }
 
@@ -296,11 +303,47 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+function getLanguage() {
+  try {
+    const value = String(PropertiesService.getDocumentProperties().getProperty('UI_LANGUAGE') || '').trim().toUpperCase();
+    return value === 'ID' ? 'ID' : 'EN';
+  } catch (e) { return 'EN'; }
+}
+
+function tr_(english, indonesian) {
+  return getLanguage() === 'ID' ? indonesian : english;
+}
+
+function setLanguage_(code) {
+  const indonesian = code === 'ID';
+  const value = indonesian ? 'Bahasa Indonesia' : 'English';
+  setSettingValue_('Language', value);
+  PropertiesService.getDocumentProperties().setProperty('UI_LANGUAGE', indonesian ? 'ID' : 'EN');
+  return value;
+}
+
+function useLanguageEnglish() {
+  setLanguage_('EN');
+  showAccountingMenu();
+  return { success: true, language: 'EN' };
+}
+
+function useLanguageIndonesian() {
+  setLanguage_('ID');
+  showAccountingMenu();
+  return { success: true, language: 'ID' };
+}
+
+function resetLanguage() {
+  return useLanguageEnglish();
+}
+
 function showAccountingMenu() {
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showSidebar(
-    HtmlService.createTemplateFromFile('AccountingMenu')
+    HtmlService.createTemplateFromFile(indonesian ? 'AccountingMenuId' : 'AccountingMenu')
       .evaluate()
-      .setTitle('ACCOUNTING')
+      .setTitle(indonesian ? 'AKUNTANSI' : 'ACCOUNTING')
   );
 }
 
@@ -325,6 +368,8 @@ function installSystem() {
     log.push(added ? `Settings: added ${added} missing row(s).` : 'Settings: already complete.');
   }
   formatSettings_(settings);
+  const initialLanguage = String(readSettings_()['Language'] || '').trim().toLowerCase().indexOf('indonesia') >= 0 ? 'ID' : 'EN';
+  PropertiesService.getDocumentProperties().setProperty('UI_LANGUAGE', initialLanguage);
   ensureCompanySetup_();
 
   // COA
@@ -398,6 +443,88 @@ function settingsRows_() {
 }
 
 function mappingKey_(m) { return 'Account: ' + m[1]; }
+
+function mappingCode_(settings, key) {
+  const m = ACCOUNT_MAPPINGS.find(x => x[0] === key);
+  return m ? String((settings && settings[mappingKey_(m)]) || m[2]).trim() : '';
+}
+
+function isPartyAccount_(account, partyType, settings) {
+  if (!account) return false;
+  const code = String(account.code || '').trim();
+  const group = String(account.group || '').trim();
+  const name = String(account.name || '').trim();
+  if (/employee|allowance|doubtful/i.test(name)) return false;
+  const customer = code === mappingCode_(settings, 'ar') ||
+    PARTY_ACCOUNT_GROUPS.Customer.includes(group) ||
+    /trade receivables|other receivables|customer advances/i.test(name);
+  const supplier = code === mappingCode_(settings, 'ap') ||
+    PARTY_ACCOUNT_GROUPS.Supplier.includes(group) ||
+    /trade payables|purchase advances|other payables/i.test(name);
+  const want = String(partyType || '').toLowerCase();
+  if (want === 'customer') return customer;
+  if (want === 'supplier') return supplier;
+  return customer || supplier;
+}
+
+function partyAccountCodes_(coa, settings) {
+  const out = { Customer: [], Supplier: [] };
+  coa.forEach(a => {
+    if (isPartyAccount_(a, 'Customer', settings)) out.Customer.push(a.code);
+    if (isPartyAccount_(a, 'Supplier', settings)) out.Supplier.push(a.code);
+  });
+  return out;
+}
+
+function allowedAccountCodesFor_(journalType, coa, settings) {
+  if (!journalType || ['General Journal', 'Correction Entry', 'Reclassification Entry'].includes(journalType)) return null;
+  const codes = new Set();
+  const add = a => codes.add(a.code);
+  const types = t => coa.filter(a => String(a.type || '').toUpperCase() === t).forEach(add);
+  const groups = names => coa.filter(a => {
+    const text = (String(a.group || '') + ' ' + String(a.name || '')).toLowerCase();
+    return names.some(n => text.includes(String(n).toLowerCase()));
+  }).forEach(add);
+  const code = key => mappingCode_(settings, key);
+
+  if (journalType === 'Opening Entry') {
+    ['ASSET', 'LIABILITY', 'EQUITY'].forEach(types);
+  } else if (journalType === 'Closing Entry') {
+    [code('incomeSummary'), code('retainedEarnings'), '3201', '3202'].filter(Boolean).forEach(c => {
+      const a = coa.find(x => String(x.code) === c); if (a) add(a);
+    });
+    ['REVENUE', 'COGS', 'EXPENSE'].forEach(types);
+    coa.filter(a => /production costs|direct labor|manufacturing overhead/i.test(
+      String(a.parent || '') + ' ' + String(a.group || '') + ' ' + String(a.name || '')
+    )).forEach(a => codes.delete(a.code));
+  } else if (journalType === 'Reversing Entry') {
+    groups(['Accrued', 'Payroll Liabilities', 'Tax Liabilities', 'Customer Advances', 'Receivable']);
+    ['REVENUE', 'EXPENSE'].forEach(types);
+  } else if (journalType === 'Adjusting Entry') {
+    ['REVENUE', 'EXPENSE'].forEach(types);
+    groups(['Accrued', 'Payroll Liabilities', 'Tax Liabilities', 'Customer Advances',
+      'Receivable', 'Prepaid', 'Prepayment', 'Depreciation', 'Amortization',
+      'Inventory Adjustments', 'Allowance']);
+  }
+  return codes.size ? codes : null;
+}
+
+function validateJournalScopes_(p, coaMap) {
+  const coa = readCoa_();
+  const settings = readSettings_();
+  const allowed = allowedAccountCodesFor_(p.journalType, coa, settings);
+  p.lines.forEach((l, i) => {
+    const account = coaMap.get(l.accountCode) || coa.find(a => String(a.code) === l.accountCode) || null;
+    if (allowed && !allowed.has(l.accountCode)) {
+      throw new Error(tr_(`Line ${i + 1}: account ${l.accountCode} is not allowed in ${p.journalType}.`,
+        `Baris ${i + 1}: akun ${l.accountCode} tidak diizinkan dalam ${p.journalType}.`));
+    }
+    if (l.party && !isPartyAccount_(account, '', settings)) {
+      throw new Error(tr_(`Line ${i + 1}: Customer / Supplier cannot be entered for account ${l.accountCode}. Use it only for receivable or payable accounts.`,
+        `Baris ${i + 1}: Pelanggan / Pemasok tidak dapat diisi pada akun ${l.accountCode}. Gunakan hanya pada akun piutang atau utang.`));
+    }
+  });
+}
 
 function addMissingSettings_(sheet) {
   const existing = new Set(Object.keys(readSettings_()));
@@ -563,9 +690,15 @@ function readSettings_() {
 /** Everything the journal form needs, in one call. Primitives only. */
 function getAppConfig() {
   const s = readSettings_();
+  const coa = readCoa_();
   const mappings = {};
   ACCOUNT_MAPPINGS.forEach(m => { mappings[m[0]] = s[mappingKey_(m)] || ''; });
   const businessType = BUSINESS_TYPES.includes(s['Business Type']) ? s['Business Type'] : 'Trading';
+  const accountScopes = {};
+  JOURNAL_TYPES.forEach(g => g.items.forEach(type => {
+    const allowed = allowedAccountCodesFor_(type, coa, s);
+    if (allowed) accountScopes[type] = Array.from(allowed);
+  }));
   return {
     company: s['Company Name'] || '',
     businessType: businessType,
@@ -575,7 +708,9 @@ function getAppConfig() {
     parties: getActiveParties_(),
     templates: JOURNAL_TEMPLATES.filter(t => !t.only || t.only.includes(businessType)),
     tax: getTaxConfig_(),
-    accounts: readCoa_().filter(a => a.active).map(a => ({
+    partyAccountCodes: partyAccountCodes_(coa, s),
+    accountScopes: accountScopes,
+    accounts: coa.filter(a => a.active).map(a => ({
       code: a.code, name: a.name, type: a.type, normal: a.normal,
       group: a.group, category: a.category
     }))
@@ -645,19 +780,31 @@ function collectSetupIssues_() {
 ============================================================ */
 
 function showJournalDialog(draftId) {
-  const t = HtmlService.createTemplateFromFile('JournalForm');
+  const indonesian = getLanguage() === 'ID';
+  const t = HtmlService.createTemplateFromFile(indonesian ? 'JournalFormId' : 'JournalForm');
   t.draftId = typeof draftId === 'string' ? draftId : '';
   t.appMode = getCompanyMode_();
   SpreadsheetApp.getUi().showModalDialog(
     t.evaluate().setWidth(1120).setHeight(820),
-    t.draftId ? 'Edit Draft ' + t.draftId : 'New Journal Entry'
+    t.draftId
+      ? (indonesian ? 'Ubah Draf ' + t.draftId : 'Edit Draft ' + t.draftId)
+      : (indonesian ? 'Jurnal Baru' : 'New Journal Entry')
   );
 }
 
 function showDraftManagement() {
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('DraftManagement').setWidth(1050).setHeight(640),
-    'Draft Management'
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'DraftManagementId' : 'DraftManagement').setWidth(1050).setHeight(640),
+    indonesian ? 'Kelola Draf' : 'Draft Management'
+  );
+}
+
+function showUserGuide() {
+  const indonesian = getLanguage() === 'ID';
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'UserGuideId' : 'UserGuide').setWidth(1080).setHeight(760),
+    indonesian ? 'Panduan Pengguna & SOP' : 'Accounting User Guide & SOP'
   );
 }
 
@@ -681,7 +828,7 @@ function openDraftEditor(journalId) {
 function saveJournal(payload) {
   const lock = LockService.getDocumentLock();
   if (!lock.tryLock(LOCK_MS)) {
-    throw new Error('The system is processing another transaction. Please try again in a moment.');
+    throw new Error(tr_('The system is processing another transaction. Please try again in a moment.', 'Sistem sedang memproses transaksi lain. Silakan coba lagi sebentar.'));
   }
   try {
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
@@ -691,6 +838,7 @@ function saveJournal(payload) {
     validateAssistedPayment_(p, coaMap);
     const isPost = p.action === 'POST';
     const totals = validateLines_(p.lines, coaMap, isPost);
+    validateJournalScopes_(p, coaMap);
     resolveParties_(p);
     if (isPost) requirePartyOnArAp_(p.lines);
     assertNotLocked_(parseLocalDate_(p.date));
@@ -704,10 +852,10 @@ function saveJournal(payload) {
     if (journalId) {
       const found = loadJournalRows_(sheet, journalId);
       if (!found.rows.length) {
-        throw new Error(`Draft ${journalId} was not found. Nothing was saved.`);
+        throw new Error(tr_(`Draft ${journalId} was not found. Nothing was saved.`, `Draf ${journalId} tidak ditemukan. Tidak ada data yang disimpan.`));
       }
       if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) {
-        throw new Error(`Journal ${journalId} is already posted and cannot be changed.`);
+        throw new Error(tr_(`Journal ${journalId} is already posted and cannot be changed.`, `Jurnal ${journalId} telah diposting dan tidak dapat diubah.`));
       }
       createdAt = found.rows[0][COL.createdAt] || now;
       createdBy = String(found.rows[0][COL.createdBy] || '').trim() || user;
@@ -731,7 +879,7 @@ function saveJournal(payload) {
       postedBy: isPost ? user : '',
       debit: totals.debit,
       credit: totals.credit,
-      message: isPost ? 'Journal posted.' : (p.journalId ? 'Draft updated.' : 'Draft saved.')
+      message: isPost ? tr_('Journal posted.', 'Jurnal telah diposting.') : tr_(p.journalId ? 'Draft updated.' : 'Draft saved.', p.journalId ? 'Draf telah diperbarui.' : 'Draf telah disimpan.')
     };
   } finally {
     lock.releaseLock();
@@ -876,8 +1024,8 @@ function nextJournalId_(dateValue, sheet) {
   const year = String(parseLocalDate_(dateValue).getFullYear());
   const props = PropertiesService.getDocumentProperties();
   const key = 'JOURNAL_SEQ_' + year;
-  const practiceEmpty = sheet.getLastRow() < 2 && getCompanyMode_() === 'PRACTICE';
-  let seq = practiceEmpty ? 0 : Number(props.getProperty(key) || 0);
+  const live = getCompanyMode_() === 'LIVE';
+  let seq = live ? Number(props.getProperty(key) || 0) : 0;
   if (sheet.getLastRow() >= 2) {
     const re = new RegExp('^JV-' + year + '-(\\d+)$');
     sheet.getRange(2, COL.id + 1, sheet.getLastRow() - 1, 1).getDisplayValues().forEach(r => {
@@ -885,9 +1033,9 @@ function nextJournalId_(dateValue, sheet) {
       if (m) seq = Math.max(seq, Number(m[1]));
     });
   }
-  if (practiceEmpty) props.deleteProperty(key);
+  if (!live) props.deleteProperty(key);
   seq++;
-  props.setProperty(key, String(seq));
+  if (live) props.setProperty(key, String(seq));
   return 'JV-' + year + '-' + String(seq).padStart(5, '0');
 }
 
@@ -900,8 +1048,10 @@ function getDraftList() {
   const sheet = getRequiredSheet_(SHEETS.JOURNAL);
   if (sheet.getLastRow() < 2) return [];
   const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+  const settings = readSettings_();
+  const codes = ['ar', 'ap'].map(k => String(settings[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim());
   const groups = new Map();
-  data.forEach(r => {
+  data.forEach((r, i) => {
     if (String(r[COL.status]) !== STATUS.DRAFT) return;
     const id = String(r[COL.id]).trim();
     if (!id) return;
@@ -909,7 +1059,7 @@ function getDraftList() {
       groups.set(id, {
         journalId: id, date: dateToIso_(r[COL.date]), journalType: String(r[COL.type]),
         description: String(r[COL.description]), reference: String(r[COL.reference]),
-        debit: 0, credit: 0, lineCount: 0, updatedMs: 0
+        debit: 0, credit: 0, lineCount: 0, updatedMs: 0, missingParty: 0, missingRows: []
       });
     }
     const g = groups.get(id);
@@ -917,6 +1067,14 @@ function getDraftList() {
     g.credit += Number(r[COL.credit] || 0);
     g.lineCount++;
     if (r[COL.updatedAt] instanceof Date) g.updatedMs = Math.max(g.updatedMs, r[COL.updatedAt].getTime());
+    if (codes.includes(String(r[COL.accountCode]).trim()) && !String(r[COL.partyId] || '').trim()) {
+      g.missingParty++;
+      const debit = Number(r[COL.debit]) || 0, credit = Number(r[COL.credit]) || 0;
+      const amount = debit > 0 ? debit : credit;
+      const label = debit > 0 ? 'No Supplier' : 'No Customer';
+      const desc = String(r[COL.lineDescription] || r[COL.description] || '');
+      g.missingRows.push('Row ' + (i + 2) + ' - ' + desc + ' Rp ' + Number(amount).toLocaleString('id-ID') + ' - ' + label);
+    }
   });
   return Array.from(groups.values())
     .sort((a, b) => b.updatedMs - a.updatedMs)
@@ -924,6 +1082,7 @@ function getDraftList() {
       journalId: g.journalId, date: g.date, journalType: g.journalType,
       description: g.description, reference: g.reference,
       debit: g.debit, credit: g.credit, lineCount: g.lineCount,
+      missingParty: g.missingParty, missingRows: g.missingRows,
       updatedAt: g.updatedMs ? Utilities.formatDate(new Date(g.updatedMs),
         SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'dd MMM yyyy HH:mm') : ''
     }));
@@ -976,7 +1135,7 @@ function getDraftById(journalId) {
 
 function deleteDraft(journalId) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const id = String(journalId || '').trim();
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
@@ -987,7 +1146,7 @@ function deleteDraft(journalId) {
     }
     found.rowNumbers.slice().sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
     SpreadsheetApp.flush();
-    return { success: true, journalId: id, message: `Draft ${id} deleted.` };
+    return { success: true, journalId: id, message: tr_(`Draft ${id} deleted.`, `Draf ${id} telah dihapus.`) };
   } finally {
     lock.releaseLock();
   }
@@ -996,7 +1155,7 @@ function deleteDraft(journalId) {
 /** Post button in Draft Management: validates, then flips Status to POSTED. */
 function postDraftFromManagement(journalId) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const id = String(journalId || '').trim();
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
@@ -1025,9 +1184,77 @@ function postDraftFromManagement(journalId) {
       sheet.getRange(found.rowNumbers[i], 1, 1, JOURNAL_HEADERS.length).setValues([r]);
     });
     SpreadsheetApp.flush();
-    return { success: true, journalId: id, message: `Journal ${id} posted.` };
+    return { success: true, journalId: id, message: tr_(`Journal ${id} posted.`, `Jurnal ${id} telah diposting.`) };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/** Posts a filtered list of drafts. Each journal is validated on its own; failures stay in Draft. */
+function postDraftList(journalIds) {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
+  try {
+    const ids = (Array.isArray(journalIds) ? journalIds : []).map(x => String(x || '').trim()).filter(Boolean);
+    if (!ids.length) return { posted: [], failures: [], missingPartyLines: 0, message: tr_('No drafts to post', 'Tidak ada draf untuk diposting') };
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const coaMap = getCoaMap_(), settings = readSettings_();
+    const now = new Date(), user = getCurrentUser_();
+    const posted = [], failures = [], updates = [];
+    let missingPartyLines = 0;
+    ids.forEach(id => {
+      try {
+        const found = loadJournalRows_(sheet, id);
+        if (!found.rows.length) throw new Error('Draft was not found.');
+        if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) throw new Error('Journal is already posted.');
+        const lines = found.rows.map(r => ({
+          accountCode: String(r[COL.accountCode]).trim(), debit: Number(r[COL.debit] || 0),
+          credit: Number(r[COL.credit] || 0), partyId: String(r[COL.partyId] || '')
+        }));
+        validateLines_(lines, coaMap, true);
+        assertNotLocked_(parseLocalDate_(found.rows[0][COL.date]));
+        missingPartyLines += countMissingParty_(lines, settings);
+        found.rows.forEach((r, i) => {
+          const before = r.slice();
+          r[COL.status] = STATUS.POSTED;
+          r[COL.postedAt] = now;
+          r[COL.postedBy] = user;
+          r[COL.updatedAt] = now;
+          updates.push({ number: found.rowNumbers[i], before: before, after: r });
+        });
+        posted.push(id);
+      } catch (e) {
+        failures.push({ journalNo: id, reason: e.message });
+      }
+    });
+    if (updates.length) writeDraftPosts_(sheet, updates);
+    SpreadsheetApp.flush();
+    if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
+    return { posted: posted, failures: failures, missingPartyLines: missingPartyLines,
+      message: tr_(posted.length + ' posted, ' + failures.length + ' failed.', posted.length + ' diposting, ' + failures.length + ' gagal.') };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeDraftPosts_(sheet, updates) {
+  const sorted = updates.slice().sort((a, b) => a.number - b.number);
+  const groups = [];
+  sorted.forEach(u => {
+    const last = groups[groups.length - 1];
+    if (last && last.rows[last.rows.length - 1].number + 1 === u.number) last.rows.push(u);
+    else groups.push({ number: u.number, rows: [u] });
+  });
+  const written = [];
+  try {
+    groups.forEach(g => {
+      sheet.getRange(g.number, 1, g.rows.length, JOURNAL_HEADERS.length).setValues(g.rows.map(x => x.after));
+      written.push(g);
+    });
+  } catch (e) {
+    written.forEach(g => sheet.getRange(g.number, 1, g.rows.length, JOURNAL_HEADERS.length).setValues(g.rows.map(x => x.before)));
+    console.error('Post All write failed: ' + e.message);
+    throw e;
   }
 }
 
@@ -1128,6 +1355,8 @@ function dateToIso_(value) {
 /** Links every line to a customer/supplier from the Parties sheet. A line party overrides the header party. */
 function resolveParties_(p) {
   const byName = new Map(readParties_().filter(x => x.active).map(x => [x.name.toLowerCase(), x]));
+  const settings = readSettings_();
+  const coaMap = getCoaMap_();
   const find = name => {
     if (!name) return null;
     const x = byName.get(name.toLowerCase());
@@ -1136,20 +1365,22 @@ function resolveParties_(p) {
   };
   const header = find(p.party);
   p.lines.forEach(l => {
-    const x = l.party ? find(l.party) : header;
+    const eligible = isPartyAccount_(coaMap.get(l.accountCode), '', settings);
+    const x = eligible ? (l.party ? find(l.party) : header) : null;
     l.partyName = x ? x.name : '';
     l.partyId = x ? x.id : '';
   });
 }
 
-/** Receivable and payable lines must name the customer or supplier, so the sub-ledgers match later. */
-function requirePartyOnArAp_(lines) {
-  const s = readSettings_();
+function countMissingParty_(lines, settings) {
+  const s = settings || readSettings_();
   const codes = ['ar', 'ap'].map(k => String(s[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim());
-  lines.forEach((l, i) => {
-    if (codes.includes(String(l.accountCode)) && !l.partyId) {
-      throw new Error(`Line ${i + 1}: receivable and payable lines need a customer or supplier. Select one in the Parties field.`);
-    }
-  });
+  return lines.reduce((n, l) => n + (codes.includes(String(l.accountCode)) && !l.partyId ? 1 : 0), 0);
+}
+
+function requirePartyOnArAp_(lines, settings) {
+  const missing = countMissingParty_(lines, settings);
+  if (missing) console.warn('Post: ' + missing + ' lines posted without Customer / Supplier');
+  return missing;
 }
 

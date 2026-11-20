@@ -56,6 +56,7 @@
   .dialog h2 { margin: 0 0 8px; font-size: 16px; }
   .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; }
   .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
@@ -66,6 +67,7 @@
 <div class="toolbar">
   <input type="search" id="search" placeholder="Search by Journal ID, description, or reference">
   <button class="ghost" id="refresh">Refresh</button>
+  <button class="post" id="postAll">Post All</button>
 </div>
 
 <div class="wrap">
@@ -96,6 +98,7 @@
   let drafts = [];
   let busy = false;
   let pending = null;
+  let failedFilter = null;
   const $ = id => document.getElementById(id);
 
   const fmt = n => Number(n || 0).toLocaleString('id-ID');
@@ -124,10 +127,15 @@
       .getDraftList();
   }
 
-  function render() {
+  function filteredDrafts() {
     const q = $('search').value.trim().toLowerCase();
-    const list = drafts.filter(d =>
+    return drafts.filter(d =>
+      (!failedFilter || failedFilter.includes(d.journalId)) &&
       [d.journalId, d.description, d.reference].some(v => String(v || '').toLowerCase().includes(q)));
+  }
+
+  function render() {
+    const list = filteredDrafts();
     if (!list.length) {
       $('body').innerHTML = '<tr><td colspan="8" class="empty">' +
         (drafts.length ? 'No draft matches your search.' : 'No drafts. Save a journal as Draft to see it here.') +
@@ -151,12 +159,18 @@
       </tr>`).join('');
   }
 
-  function ask(title, body, okLabel, onOk) {
+  function ask(title, body, okLabel, onOk, cancelLabel, hideCancel) {
     $('dlgTitle').textContent = title;
     $('dlgBody').textContent = body;
     $('dlgOk').textContent = okLabel;
+    $('dlgCancel').textContent = cancelLabel || 'Cancel';
+    $('dlgCancel').classList.toggle('hidden', !!hideCancel);
     pending = onOk;
     $('overlay').classList.remove('hidden');
+  }
+  function missingPartyBody(count, details) {
+    return count + ' transaction' + (count === 1 ? ' has' : 's have') + ' no Customer / Supplier assigned. You can still post them to the General Ledger, but they will not appear in the Customer / Supplier ledger. Do you want to continue?' +
+      (details && details.length ? '\n\n' + details.join('\n') : '');
   }
   function closeAsk() { $('overlay').classList.add('hidden'); pending = null; }
   $('dlgCancel').addEventListener('click', closeAsk);
@@ -171,6 +185,74 @@
       [serverFn](id);
   }
 
+  function postAll() {
+    if (busy) return;
+    failedFilter = null;
+    const list = filteredDrafts();
+    if (!list.length) { setStatus('No drafts to post'); return; }
+    const ids = list.map(d => d.journalId);
+    const total = ids.length;
+    const debit = list.reduce((sum, d) => sum + Number(d.debit || 0), 0);
+    const without = list.filter(d => Number(d.missingParty || 0) > 0).length;
+    const body = 'You are about to post ' + total + ' draft journals to the General Ledger. ' +
+      'Please confirm you have reviewed the journals. Posted journals cannot be edited and will affect your balances.' +
+      '\n\n' + total + ' journals | Total Rp ' + fmt(debit) + ' | ' + without + ' journals without Customer / Supplier';
+    ask('Post All Drafts?', body, 'Post All', () => postAllChunks(ids), 'Review Again');
+  }
+
+  function postAllChunks(ids) {
+    setBusy(true);
+    const total = ids.length;
+    let done = 0, shown = 0, posted = [], failures = [], missing = 0;
+    const ticker = setInterval(() => {
+      if (shown < total - 1) { shown++; setStatus('Posting ' + shown + ' / ' + total + '...'); }
+    }, 120);
+    setStatus('Posting 0 / ' + total + '...');
+    const step = () => {
+      if (done >= total) {
+        clearInterval(ticker);
+        setBusy(false);
+        showPostAllResult(posted, failures);
+        load();
+        return;
+      }
+      const chunk = ids.slice(done, done + 50);
+      google.script.run
+        .withSuccessHandler(r => {
+          done += chunk.length;
+          shown = Math.max(shown, done);
+          posted = posted.concat(r.posted || []);
+          failures = failures.concat(r.failures || []);
+          missing += Number(r.missingPartyLines || 0);
+          setStatus('Posting ' + done + ' / ' + total + '...');
+          step();
+        })
+        .withFailureHandler(e => {
+          clearInterval(ticker);
+          setBusy(false);
+          setStatus(e.message || String(e), true);
+          load();
+        })
+        .postDraftList(chunk);
+    };
+    step();
+  }
+
+  function showPostAllResult(posted, failures) {
+    if (!failures.length) {
+      ask('Post All Complete', 'All ' + posted.length + ' drafts posted successfully.', 'Close', null, 'Close', true);
+      return;
+    }
+    const body = 'Post All Complete: ' + posted.length + ' posted, ' + failures.length + ' failed.\n\n' +
+      failures.map(f => f.journalNo + ' - ' + f.reason).join('\n');
+    ask('Post All Complete', body, 'View Failed', () => {
+      failedFilter = failures.map(f => f.journalNo);
+      $('search').value = '';
+      render();
+      setStatus('Showing ' + failedFilter.length + ' failed drafts.');
+    }, 'Close');
+  }
+
   $('body').addEventListener('click', ev => {
     const btn = ev.target.closest('button[data-act]');
     if (!btn || busy) return;
@@ -183,17 +265,19 @@
         .withFailureHandler(e => { setBusy(false); setStatus('Could not open the draft: ' + e.message, true); })
         .openDraftEditor(id);
     } else if (btn.dataset.act === 'post') {
-      ask('Post ' + id + '?',
-        'The journal will be posted and counted in the General Ledger and financial statements.\nPosted journals cannot be edited or deleted.',
-        'Post journal', () => run('Posting...', 'postDraftFromManagement', id));
+      const d = drafts.find(x => x.journalId === id) || {};
+      const go = () => run('Posting...', 'postDraftFromManagement', id);
+      if (d.missingParty) ask('Missing Customer / Supplier', missingPartyBody(d.missingParty, d.missingRows), 'Post Anyway', go, 'Review Again');
+      else go();
     } else if (btn.dataset.act === 'delete') {
       ask('Delete ' + id + '?', 'This draft will be removed permanently.', 'Delete draft',
         () => run('Deleting...', 'deleteDraft', id));
     }
   });
 
-  $('search').addEventListener('input', render);
-  $('refresh').addEventListener('click', load);
+  $('postAll').addEventListener('click', postAll);
+  $('search').addEventListener('input', () => { failedFilter = null; render(); });
+  $('refresh').addEventListener('click', () => { failedFilter = null; load(); });
   load();
 </script>
 </body>

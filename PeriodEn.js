@@ -145,7 +145,7 @@ function assertNotLocked_(date) {
 
 function setLockDate(iso) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
     const sh = getRequiredSheet_(SHEETS.SETTINGS);
     const value = String(iso || '').trim();
@@ -154,7 +154,7 @@ function setLockDate(iso) {
     let row = keys.findIndex(r => String(r[0]).trim() === 'Lock Date') + 2;
     if (row < 2) { row = Math.max(sh.getLastRow() + 1, 2); sh.getRange(row, 1).setValue('Lock Date'); }
     sh.getRange(row, 2).setNumberFormat('@').setValue(value);
-    return { lockDate: value, message: value ? 'Journals dated on or before ' + value + ' can no longer be posted.' : 'The lock date was cleared.' };
+    return { lockDate: value, message: tr_(value ? 'Journals dated on or before ' + value + ' can no longer be posted.' : 'The lock date was cleared.', value ? 'Jurnal bertanggal ' + value + ' atau sebelumnya tidak dapat diposting lagi.' : 'Tanggal kunci telah dihapus.') };
   } finally {
     lock.releaseLock();
   }
@@ -166,8 +166,10 @@ function setLockDate(iso) {
 ============================================================ */
 
 function showPeriodEnd() {
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('PeriodEnd').setWidth(1000).setHeight(760), 'Period-End Tools');
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'PeriodEndId' : 'PeriodEnd').setWidth(1000).setHeight(760),
+    indonesian ? 'Alat Akhir Periode' : 'Period-End Tools');
 }
 
 function getPeriodEndSetup() {
@@ -212,7 +214,7 @@ function createSystemJournal_(spec) {
 
 function withLock_(fn) {
   const lock = LockService.getDocumentLock();
-  if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
@@ -333,12 +335,12 @@ function createReversals(payload) {
     ids.forEach(id => {
       try {
         const found = loadJournalRows_(sheet, id);
-        if (!found.rows.length) throw new Error('was not found.');
-        if (found.rows.some(r => String(r[COL.status]) !== STATUS.POSTED)) throw new Error('is not posted. Only posted journals can be reversed. Edit or delete drafts instead.');
-        if (found.rows.some(r => String(r[COL.type]) === 'Reversing Entry')) throw new Error('is itself a reversal.');
+        if (!found.rows.length) throw new Error(tr_('was not found.', 'tidak ditemukan.'));
+        if (found.rows.some(r => String(r[COL.status]) !== STATUS.POSTED)) throw new Error(tr_('is not posted. Only posted journals can be reversed. Edit or delete drafts instead.', 'belum diposting. Hanya jurnal yang telah diposting yang dapat dibalik. Ubah atau hapus draf sebagai gantinya.'));
+        if (found.rows.some(r => String(r[COL.type]) === 'Reversing Entry')) throw new Error(tr_('is itself a reversal.', 'adalah jurnal pembalik.'));
         const all = sheet.getRange(2, COL.linkedId + 1, sheet.getLastRow() - 1, 1).getValues();
         const typeCol = sheet.getRange(2, COL.type + 1, sheet.getLastRow() - 1, 1).getValues();
-        if (all.some((r, i) => String(r[0]) === id && String(typeCol[i][0]) === 'Reversing Entry')) throw new Error('has already been reversed.');
+        if (all.some((r, i) => String(r[0]) === id && String(typeCol[i][0]) === 'Reversing Entry')) throw new Error(tr_('has already been reversed.', 'telah dibalik sebelumnya.'));
         const first = found.rows[0];
         const newId = createSystemJournal_({ date: date, type: 'Reversing Entry', description: 'Reversal of ' + id + ': ' + first[COL.description],
           reference: String(first[COL.reference] || ''), origin: 'REVERSAL', batchId: 'REV-' + id, linkedId: id, lines: planReversal_(found.rows) });
@@ -346,6 +348,6 @@ function createReversals(payload) {
       } catch (e) { errors.push(id + ' ' + e.message); }
     });
     if (!created.length) throw new Error(errors.join('\n'));
-    return { created: created, errors: errors, message: created.length + ' reversing draft(s) created: ' + created.join(', ') + '. Post them in Draft Management.' };
+    return { created: created, errors: errors, message: tr_(created.length + ' reversing draft(s) created: ' + created.join(', ') + '. Post them in Draft Management.', created.length + ' draf pembalik dibuat: ' + created.join(', ') + '. Posting draf tersebut di Kelola Draf.') };
   });
 }

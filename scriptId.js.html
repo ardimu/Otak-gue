@@ -1,0 +1,57 @@
+﻿<script>
+  (function () {
+    var status = document.getElementById('status');
+
+    function showStatus(message, isError) {
+      if (!message) {
+        status.hidden = true;
+        status.textContent = '';
+        return;
+      }
+      status.hidden = false;
+      status.textContent = message;
+      status.style.color = isError ? '#a8322a' : '#24292e';
+      status.style.background = isError ? '#f8e6e4' : '#e3e5e8';
+    }
+
+    function runAction(action) {
+      var runner = google.script.run
+        .withSuccessHandler(function () { showStatus(''); })
+        .withFailureHandler(function (error) {
+          showStatus(error && error.message ? error.message : String(error), true);
+        });
+
+      if (typeof runner[action] !== 'function') {
+        showStatus('Aksi menu tidak tersedia: ' + action, true);
+        return;
+      }
+      runner[action]();
+    }
+
+    function toggleSubmenu(toggle) {
+      var target = document.getElementById(toggle.getAttribute('data-submenu'));
+      if (!target) return;
+      var expanded = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+      target.hidden = expanded;
+    }
+
+    document.addEventListener('click', function (event) {
+      var toggle = event.target.closest('[data-submenu]');
+      if (toggle) {
+        toggleSubmenu(toggle);
+        return;
+      }
+      var item = event.target.closest('[data-action]');
+      if (item) runAction(item.getAttribute('data-action'));
+    });
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var toggle = event.target.closest('[data-submenu]');
+      if (!toggle) return;
+      event.preventDefault();
+      toggleSubmenu(toggle);
+    });
+  })();
+</script>

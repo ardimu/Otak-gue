@@ -4,9 +4,10 @@ const COMPANY_PROFILE_KEYS = ['Company Name', 'Legal Name', 'NPWP', 'NIB', 'Addr
 
 function showCompanySettings() {
   ensureCompanySetup_();
+  const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutputFromFile('CompanySettings').setWidth(980).setHeight(760),
-    'Company Profile & Settings'
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'CompanySettingsId' : 'CompanySettings').setWidth(980).setHeight(760),
+    indonesian ? 'Profil & Pengaturan Perusahaan' : 'Company Profile & Settings'
   );
 }
 
@@ -164,7 +165,7 @@ function saveCompanyProfile(payload) {
   COMPANY_PROFILE_KEYS.forEach(key => {
     if (Object.prototype.hasOwnProperty.call(payload, key)) setSettingValue_(key, payload[key]);
   });
-  return { success: true, message: 'Profile saved.' };
+  return { success: true, message: tr_('Profile saved.', 'Profil tersimpan.') };
 }
 
 function saveCompanyLogo(dataUrl) {
@@ -173,12 +174,12 @@ function saveCompanyLogo(dataUrl) {
   if (!match) throw new Error('Choose a PNG, JPEG, GIF, or WebP image.');
   if (value.length > 45000) throw new Error('Logo is too large. Choose a smaller image.');
   setSettingValue_('Company Logo', value);
-  return { success: true, message: 'Company logo saved.' };
+  return { success: true, message: tr_('Company logo saved.', 'Logo perusahaan tersimpan.') };
 }
 
 function removeCompanyLogo() {
   setSettingValue_('Company Logo', '');
-  return { success: true, message: 'Company logo removed.' };
+  return { success: true, message: tr_('Company logo removed.', 'Logo perusahaan dihapus.') };
 }
 
 function saveCompanyAccounting(payload) {
@@ -203,7 +204,7 @@ function saveCompanyAccounting(payload) {
     if (value !== 'IDR') throw new Error('Only IDR is supported.');
     setSettingValue_('Currency', 'IDR');
   }
-  return { success: true, message: 'Accounting settings saved.' };
+  return { success: true, message: tr_('Accounting settings saved.', 'Pengaturan akuntansi tersimpan.') };
 }
 
 function saveCompanyAccounts(payload) {
@@ -219,7 +220,7 @@ function saveCompanyAccounts(payload) {
     if (!account.active) throw new Error('Account ' + code + ' is inactive.');
     setSettingValue_(key, code);
   });
-  return { success: true, message: 'Default accounts saved.' };
+  return { success: true, message: tr_('Default accounts saved.', 'Akun default tersimpan.') };
 }
 
 function saveCompanySystem(payload) {
@@ -251,7 +252,7 @@ function saveCompanySystem(payload) {
     }
     setSettingValue_('Bank Suspense Account', value);
   }
-  return { success: true, message: 'System settings saved.' };
+  return { success: true, message: tr_('System settings saved.', 'Pengaturan sistem tersimpan.') };
 }
 
 function clearPracticeData_() {
@@ -275,7 +276,7 @@ function resetPracticeData() {
   try {
     clearPracticeData_();
     writeSettingsLog_('Practice Data', 'Present', 'Deleted');
-    return { success: true, message: 'Practice data has been reset.' };
+    return { success: true, message: tr_('Practice data has been reset.', 'Data latihan telah diatur ulang.') };
   } finally {
     lock.releaseLock();
   }
@@ -298,7 +299,7 @@ function goLive(companyName) {
     setSettingValue_('Mode', 'LIVE');
     setSettingValue_('Go Live Date', isoDate_(new Date()));
     setSettingValue_('Went Live By', getCurrentUser_());
-    return { success: true, message: 'System is now LIVE.' };
+    return { success: true, message: tr_('System is now LIVE.', 'Sistem sekarang dalam mode LIVE.') };
   } finally {
     lock.releaseLock();
   }

@@ -35,6 +35,7 @@
   td input { min-width: 170px; }
   tr.dup td, tr.err td { color: var(--muted); }
   tr.need td:nth-child(8) input { border-color: var(--warn); background: var(--warn-soft); }
+  .party-warning { color: var(--warn); font-size: 11px; margin-top: 2px; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
   .tag.new { background: var(--accent-soft); color: var(--accent); }
   .tag.dup { background: #eceeec; color: var(--muted); }
@@ -137,13 +138,30 @@ function accountFromText(t) {
   if (!x) return null;
   return setup.accounts.find(a => x === accLabel(a).toLowerCase() || x === String(a.code) || x === a.name.toLowerCase()) || null;
 }
+function partyKnown(name) {
+  const x = String(name || '').trim().toLowerCase();
+  return !x || setup.parties.some(p => p.toLowerCase() === x);
+}
+function updatePartyWarning(tr) {
+  const input = tr.querySelector('.party');
+  if (!input) return;
+  const warn = tr.querySelector('.party-warning');
+  const bad = !partyKnown(input.value);
+  if (warn) warn.textContent = bad ? 'Customer / Supplier not found in Master Data' : '';
+  input.setAttribute('aria-invalid', bad ? 'true' : 'false');
+}
 
-function ask(title, body, ok, fn) {
+function ask(title, body, ok, fn, cancelLabel) {
   $('dlgTitle').textContent = title; $('dlgBody').textContent = body; $('dlgOk').textContent = ok;
+  $('dlgCancel').textContent = cancelLabel || 'Cancel';
   pending = fn; $('overlay').classList.remove('hidden');
 }
 $('dlgCancel').addEventListener('click', () => { $('overlay').classList.add('hidden'); pending = null; });
 $('dlgOk').addEventListener('click', () => { const f = pending; $('overlay').classList.add('hidden'); pending = null; if (f) f(); });
+function missingPartyBody(count, details) {
+  return count + ' transaction' + (count === 1 ? ' has' : 's have') + ' no Customer / Supplier assigned. You can still post them to the General Ledger, but they will not appear in the Customer / Supplier ledger. Do you want to continue?' +
+    (details && details.length ? '\n\n' + details.join('\n') : '');
+}
 
 function loadSetup() {
   google.script.run
@@ -165,6 +183,7 @@ function showProfileNote() {
 $('profile').addEventListener('change', showProfileNote);
 
 function renderBatches(list) {
+  if (setup) setup.batches = list;
   $('batches').innerHTML = list.length ? list.map(b => `
     <tr><td><b>${esc(b.batchId)}</b></td><td>${esc(b.at)}</td><td>${esc(b.profile)}</td><td class="num">${b.imported}</td>
     <td>${esc(b.from)} to ${esc(b.to)}</td><td>${esc(b.status)}</td>
@@ -176,11 +195,17 @@ $('batches').addEventListener('click', ev => {
   if (!b || busy) return;
   const id = b.dataset.id;
   if (b.dataset.act === 'post') {
-    ask('Post batch ' + id + '?', 'Every draft journal of this batch will be posted. If one journal is not valid, nothing is posted.', 'Post all', () => runBatch('postImportBatch', id, 'Posting...'));
+    postBatchWithWarning(id);
   } else {
     ask('Delete batch ' + id + '?', 'All draft journals of this batch will be deleted. The same lines can be imported again afterwards.', 'Delete batch', () => runBatch('deleteImportBatch', id, 'Deleting...'));
   }
 });
+function postBatchWithWarning(id) {
+  const b = (setup && setup.batches || []).find(x => x.batchId === id) || {};
+  const go = () => runBatch('postImportBatch', id, 'Posting...');
+  if (b.missingParty) ask('Missing Customer / Supplier', missingPartyBody(b.missingParty, b.missingRows), 'Post Anyway', go, 'Review Again');
+  else go();
+}
 function runBatch(fn, id, label) {
   setBusy(true); say(label);
   google.script.run
@@ -220,7 +245,7 @@ function render() {
       <td>${r.n}</td><td>${esc(r.date)}</td><td>${esc(r.desc)}</td><td>${esc(r.ref)}</td>
       <td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td>
       <td><input class="acc" list="accList" value="${esc(acc)}" ${dup || err ? 'disabled' : ''} placeholder="Type an account"></td>
-      <td><input class="party" list="partyList" value="${esc(r.party)}" ${dup || err ? 'disabled' : ''} placeholder="Optional"></td>
+      <td><input class="party" list="partyList" value="${esc(r.party)}" ${dup || err ? 'disabled' : ''} placeholder="Optional" aria-invalid="${partyKnown(r.party) ? 'false' : 'true'}"><div class="note party-warning">${partyKnown(r.party) ? '' : 'Customer / Supplier not found in Master Data'}</div></td>
       <td>${tag}${r.note && !dup ? '<div class="note">' + esc(r.note) + '</div>' : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="10" class="note">No line with a valid date was found. Check the Header Row and Date Column of the profile.</td></tr>';
   $('result').classList.remove('hidden');
@@ -244,6 +269,9 @@ $('body').addEventListener('change', e => {
     if (accountFromText(e.target.value) && !tr.querySelector('.sel').disabled) tr.querySelector('.sel').checked = true;
   }
   updateInfo();
+});
+$('body').addEventListener('input', e => {
+  if (e.target.classList.contains('party')) updatePartyWarning(e.target.closest('tr'));
 });
 $('btnBulk').addEventListener('click', () => {
   const a = accountFromText($('bulkAcc').value);
@@ -273,15 +301,17 @@ $('btnImport').addEventListener('click', () => {
       const a = accountFromText(tr.querySelector('.acc').value);
       if (!a) throw new Error('Row ' + r.n + ': choose a counter account.');
       const party = tr.querySelector('.party').value.trim();
-      if (party && !setup.parties.some(p => p.toLowerCase() === party.toLowerCase())) {
-        throw new Error('Row ' + r.n + ': "' + party + '" is not in the Parties sheet. Add it there first.');
-      }
       return { n: r.n, date: r.date, desc: r.desc, ref: r.ref, out: r.out, in: r.in, accountCode: a.code, party: party, key: r.key };
     });
     const mode = $('mode').value;
     const go = () => doImport(rows, mode);
-    if (mode === 'POST') ask('Post ' + rows.length + ' journals?', 'The journals will be posted straight away and counted in the General Ledger and financial statements.', 'Import and post', go);
-    else go();
+    if (mode === 'POST') {
+      const missing = rows.filter(r => !String(r.party || '').trim());
+      if (missing.length) {
+        const details = missing.map(r => 'Row ' + r.n + ' - ' + r.desc + ' Rp ' + fmt(r.in > 0 ? r.in : r.out) + ' - ' + (r.in > 0 ? 'No Customer' : 'No Supplier'));
+        ask('Missing Customer / Supplier', missingPartyBody(missing.length, details), 'Post Anyway', go, 'Review Again');
+      } else go();
+    } else go();
   } catch (e) { say(e.message, 'error'); }
 });
 function doImport(rows, mode) {
@@ -289,9 +319,10 @@ function doImport(rows, mode) {
   google.script.run
     .withSuccessHandler(r => {
       setBusy(false);
+      const took = r.durationMs == null ? '' : ' (' + (r.durationMs / 1000).toFixed(1) + 's)';
       say('Batch ' + r.batchId + ': ' + r.imported + ' journals imported as ' + (r.status === 'POSTED' ? 'posted' : 'drafts') +
         (r.skipped ? '.\n' + r.skipped + ' lines were skipped:\n' + r.errors.join('\n') : '.') +
-        (r.status === 'DRAFT' ? '\nReview them in Draft Management, or post the whole batch below.' : ''), r.skipped ? 'error' : 'success');
+        (r.status === 'DRAFT' ? '\nReview them in Draft Management, or post the whole batch below.' : '') + took, r.skipped ? 'error' : 'success');
       data = null; $('result').classList.add('hidden'); refreshBatches();
     })
     .withFailureHandler(e => { setBusy(false); say(e.message || String(e), 'error'); })
