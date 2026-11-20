@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #eef2ec; --sheet: #ffffff; --ink: #1d2a25; --muted: #5d6b65; --rule: #d2dcd1;
+    --accent: #1f5c46; --accent-soft: #e2eee8; --danger: #a8322a; --danger-soft: #f8e6e4; --warn: #8a5a00; --warn-soft: #fbf0d9;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--paper); color: var(--ink); font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  h2 { margin: 18px 0 8px; font-size: 15px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0; }
+  ol.steps { margin: 8px 0 14px; padding-left: 20px; color: var(--muted); }
+  .bar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .bar .field { min-width: 260px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; background: #fff; font: inherit; color: var(--ink); }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=checkbox] { width: auto; }
+  button { border: 1px solid transparent; border-radius: 3px; padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #fff; }
+  .outline { background: #fff; border-color: var(--accent); color: var(--accent); }
+  .quiet { background: #fff; border-color: #9fb0a4; color: var(--ink); }
+  .danger { background: #fff; border-color: var(--danger); color: var(--danger); }
+  .wrap { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; overflow: auto; max-height: 360px; }
+  table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+  th { position: sticky; top: 0; background: #f4f7f3; text-align: left; font-weight: 600; padding: 8px 8px; border-bottom: 1px solid var(--rule); }
+  td { padding: 5px 8px; border-bottom: 1px solid #e8eee7; vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td input { min-width: 170px; }
+  tr.dup td, tr.err td { color: var(--muted); }
+  tr.need td:nth-child(8) input { border-color: var(--warn); background: var(--warn-soft); }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .tag.new { background: var(--accent-soft); color: var(--accent); }
+  .tag.dup { background: #eceeec; color: var(--muted); }
+  .tag.err { background: var(--danger-soft); color: var(--danger); }
+  .tag.need { background: var(--warn-soft); color: var(--warn); }
+  .note { font-size: 11px; color: var(--muted); }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  .summary span { color: var(--muted); margin-right: 5px; }
+  .foot { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+  .foot .field { min-width: 300px; }
+  #message { white-space: pre-wrap; margin-top: 10px; min-height: 18px; }
+  #message.error { color: var(--danger); }
+  #message.success { color: var(--accent); }
+  .hidden { display: none !important; }
+  .overlay { position: fixed; inset: 0; background: rgba(20, 30, 26, .45); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .dialog { width: 100%; max-width: 430px; background: #fff; border-radius: 4px; padding: 20px; }
+  .dialog h3 { margin: 0 0 8px; font-size: 16px; }
+  .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; }
+  .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+</style>
+</head>
+<body>
+<datalist id="accList"></datalist>
+<datalist id="partyList"></datalist>
+
+<h1>Bank and petty cash import</h1>
+<p class="sub">Each line of the statement becomes one journal against the bank or petty cash account.</p>
+<ol class="steps">
+  <li>Paste the statement into the <b>Bank Import</b> sheet, starting at A1 (Paste special, Values only).</li>
+  <li>Choose the profile that matches the file and read the sheet.</li>
+  <li>Check the account for each line, then import.</li>
+</ol>
+
+<div class="bar">
+  <div class="field">
+    <label for="profile">Profile</label>
+    <select id="profile"></select>
+    <div class="note" id="profileNote"></div>
+  </div>
+  <button class="primary" id="btnRead" type="button">Read the Bank Import sheet</button>
+</div>
+
+<div id="result" class="hidden">
+  <div class="summary" id="summary"></div>
+  <div class="bar">
+    <div class="field" style="min-width:300px">
+      <label for="bulkAcc">Account for the selected lines that have none yet</label>
+      <input id="bulkAcc" list="accList" placeholder="Type an account code or name">
+    </div>
+    <button class="quiet" id="btnBulk" type="button">Apply</button>
+    <button class="quiet" id="btnAll" type="button">Select or clear all</button>
+  </div>
+  <div class="wrap">
+    <table>
+      <thead><tr><th></th><th>Row</th><th>Date</th><th>Description</th><th>Reference</th><th class="num">Money out</th><th class="num">Money in</th><th>Counter account</th><th>Customer / Supplier</th><th>Status</th></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+  <div class="foot">
+    <div class="field">
+      <label for="mode">Import as</label>
+      <select id="mode">
+        <option value="DRAFT">Drafts, so I can review first (recommended)</option>
+        <option value="POST">Posted journals</option>
+      </select>
+    </div>
+    <button class="primary" id="btnImport" type="button">Import</button>
+    <span class="note" id="selInfo"></span>
+  </div>
+</div>
+
+<div id="message" role="status" aria-live="polite"></div>
+
+<h2>Recent batches</h2>
+<div class="wrap" style="max-height:200px">
+  <table style="min-width:760px">
+    <thead><tr><th>Batch</th><th>Imported</th><th>Profile</th><th class="num">Journals</th><th>Period</th><th>Status</th><th></th></tr></thead>
+    <tbody id="batches"><tr><td colspan="7" class="note">Loading...</td></tr></tbody>
+  </table>
+</div>
+
+<div id="overlay" class="overlay hidden">
+  <div class="dialog" role="dialog" aria-modal="true">
+    <h3 id="dlgTitle"></h3><p id="dlgBody"></p>
+    <div class="row"><button class="quiet" id="dlgCancel" type="button">Cancel</button><button class="primary" id="dlgOk" type="button">Confirm</button></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let setup = null, data = null, busy = false, pending = null;
+const fmt = n => (n ? Number(n).toLocaleString('id-ID') : '');
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const accLabel = a => a.code + ' - ' + a.name;
+
+function say(text, kind) { $('message').textContent = text || ''; $('message').className = kind || ''; }
+function setBusy(v) { busy = v; document.querySelectorAll('button').forEach(b => { b.disabled = v; }); }
+function accountFromText(t) {
+  const x = String(t || '').trim().toLowerCase();
+  if (!x) return null;
+  return setup.accounts.find(a => x === accLabel(a).toLowerCase() || x === String(a.code) || x === a.name.toLowerCase()) || null;
+}
+
+function ask(title, body, ok, fn) {
+  $('dlgTitle').textContent = title; $('dlgBody').textContent = body; $('dlgOk').textContent = ok;
+  pending = fn; $('overlay').classList.remove('hidden');
+}
+$('dlgCancel').addEventListener('click', () => { $('overlay').classList.add('hidden'); pending = null; });
+$('dlgOk').addEventListener('click', () => { const f = pending; $('overlay').classList.add('hidden'); pending = null; if (f) f(); });
+
+function loadSetup() {
+  google.script.run
+    .withSuccessHandler(s => {
+      setup = s;
+      $('profile').innerHTML = s.profiles.map(p => '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>').join('');
+      $('accList').innerHTML = s.accounts.map(a => '<option value="' + esc(accLabel(a)) + '"></option>').join('');
+      $('partyList').innerHTML = s.parties.map(n => '<option value="' + esc(n) + '"></option>').join('');
+      showProfileNote(); renderBatches(s.batches);
+      if (!s.profiles.length) say('There is no active profile in the Bank Profiles sheet. Run ACCOUNTING > Setup > Install / Update System.', 'error');
+    })
+    .withFailureHandler(e => say(e.message || String(e), 'error'))
+    .getBankSetup();
+}
+function showProfileNote() {
+  const p = setup.profiles.find(x => x.name === $('profile').value);
+  $('profileNote').textContent = p ? (p.mode === 'PETTY' ? 'Petty cash vouchers. Account: ' : 'Bank statement. Account: ') + p.account : '';
+}
+$('profile').addEventListener('change', showProfileNote);
+
+function renderBatches(list) {
+  $('batches').innerHTML = list.length ? list.map(b => `
+    <tr><td><b>${esc(b.batchId)}</b></td><td>${esc(b.at)}</td><td>${esc(b.profile)}</td><td class="num">${b.imported}</td>
+    <td>${esc(b.from)} to ${esc(b.to)}</td><td>${esc(b.status)}</td>
+    <td>${b.status === 'DRAFT' ? `<button class="outline" data-act="post" data-id="${esc(b.batchId)}">Post all</button> <button class="danger" data-act="del" data-id="${esc(b.batchId)}">Delete</button>` : ''}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="note">No imports yet.</td></tr>';
+}
+$('batches').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-act]');
+  if (!b || busy) return;
+  const id = b.dataset.id;
+  if (b.dataset.act === 'post') {
+    ask('Post batch ' + id + '?', 'Every draft journal of this batch will be posted. If one journal is not valid, nothing is posted.', 'Post all', () => runBatch('postImportBatch', id, 'Posting...'));
+  } else {
+    ask('Delete batch ' + id + '?', 'All draft journals of this batch will be deleted. The same lines can be imported again afterwards.', 'Delete batch', () => runBatch('deleteImportBatch', id, 'Deleting...'));
+  }
+});
+function runBatch(fn, id, label) {
+  setBusy(true); say(label);
+  google.script.run
+    .withSuccessHandler(r => { setBusy(false); say(r.message, 'success'); refreshBatches(); })
+    .withFailureHandler(e => { setBusy(false); say(e.message || String(e), 'error'); })
+    [fn](id);
+}
+function refreshBatches() {
+  google.script.run.withSuccessHandler(renderBatches).withFailureHandler(() => {}).getImportBatches();
+}
+
+/* ---------- Read and review ---------- */
+$('btnRead').addEventListener('click', () => {
+  if (busy || !$('profile').value) return;
+  setBusy(true); say('Reading the sheet...');
+  google.script.run
+    .withSuccessHandler(r => { setBusy(false); data = r; say(''); render(); })
+    .withFailureHandler(e => { setBusy(false); data = null; $('result').classList.add('hidden'); say(e.message || String(e), 'error'); })
+    .previewBankImport($('profile').value);
+});
+
+function render() {
+  const rows = data.rows;
+  const n = { ok: 0, dup: 0, err: 0 };
+  rows.forEach(r => { if (r.status === 'DUPLICATE') n.dup++; else if (r.status === 'ERROR') n.err++; else n.ok++; });
+  $('summary').innerHTML = '';
+  [['Lines read', rows.length], ['New', n.ok], ['Already imported', n.dup], ['Errors', n.err], ['Skipped (no date or amount)', data.skipped]].forEach(it => {
+    const d = document.createElement('div'); d.innerHTML = '<span>' + esc(it[0]) + '</span><strong>' + it[1] + '</strong>'; $('summary').appendChild(d);
+  });
+  $('body').innerHTML = rows.map((r, i) => {
+    const dup = r.status === 'DUPLICATE', err = r.status === 'ERROR';
+    const acc = r.accountCode ? accLabel({ code: r.accountCode, name: r.accountName }) : '';
+    const tag = err ? '<span class="tag err">Error</span>' : dup ? '<span class="tag dup">Already imported</span>'
+      : (acc ? '<span class="tag new">New</span>' : '<span class="tag need">Needs account</span>');
+    return `<tr class="${dup ? 'dup' : err ? 'err' : (acc ? '' : 'need')}" data-i="${i}">
+      <td><input type="checkbox" class="sel" ${!dup && !err && acc ? 'checked' : ''} ${dup || err ? 'disabled' : ''}></td>
+      <td>${r.n}</td><td>${esc(r.date)}</td><td>${esc(r.desc)}</td><td>${esc(r.ref)}</td>
+      <td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td>
+      <td><input class="acc" list="accList" value="${esc(acc)}" ${dup || err ? 'disabled' : ''} placeholder="Type an account"></td>
+      <td><input class="party" list="partyList" value="${esc(r.party)}" ${dup || err ? 'disabled' : ''} placeholder="Optional"></td>
+      <td>${tag}${r.note && !dup ? '<div class="note">' + esc(r.note) + '</div>' : ''}</td></tr>`;
+  }).join('') || '<tr><td colspan="10" class="note">No line with a valid date was found. Check the Header Row and Date Column of the profile.</td></tr>';
+  $('result').classList.remove('hidden');
+  updateInfo();
+}
+
+function selectedRows() {
+  return Array.from(document.querySelectorAll('#body tr[data-i]')).filter(tr => tr.querySelector('.sel') && tr.querySelector('.sel').checked);
+}
+function updateInfo() {
+  let out = 0, inn = 0;
+  const sel = selectedRows();
+  sel.forEach(tr => { const r = data.rows[tr.dataset.i]; out += r.out; inn += r.in; });
+  $('selInfo').textContent = sel.length + ' selected. Money out Rp ' + fmt(out) + ', money in Rp ' + fmt(inn) + '.';
+  $('btnImport').textContent = 'Import ' + sel.length + ' line' + (sel.length === 1 ? '' : 's');
+}
+$('body').addEventListener('change', e => {
+  if (e.target.classList.contains('acc')) {
+    const tr = e.target.closest('tr');
+    tr.classList.toggle('need', !accountFromText(e.target.value));
+    if (accountFromText(e.target.value) && !tr.querySelector('.sel').disabled) tr.querySelector('.sel').checked = true;
+  }
+  updateInfo();
+});
+$('btnBulk').addEventListener('click', () => {
+  const a = accountFromText($('bulkAcc').value);
+  if (!a) { say('Choose an account from the chart of accounts.', 'error'); return; }
+  say('');
+  selectedRows().forEach(tr => {
+    const inp = tr.querySelector('.acc');
+    if (!accountFromText(inp.value)) { inp.value = accLabel(a); tr.classList.remove('need'); }
+  });
+  updateInfo();
+});
+$('btnAll').addEventListener('click', () => {
+  const boxes = Array.from(document.querySelectorAll('#body .sel:not(:disabled)'));
+  const on = boxes.some(b => !b.checked);
+  boxes.forEach(b => { b.checked = on; });
+  updateInfo();
+});
+
+/* ---------- Import ---------- */
+$('btnImport').addEventListener('click', () => {
+  if (busy) return;
+  try {
+    const sel = selectedRows();
+    if (!sel.length) throw new Error('Select at least one line.');
+    const rows = sel.map(tr => {
+      const r = data.rows[tr.dataset.i];
+      const a = accountFromText(tr.querySelector('.acc').value);
+      if (!a) throw new Error('Row ' + r.n + ': choose a counter account.');
+      const party = tr.querySelector('.party').value.trim();
+      if (party && !setup.parties.some(p => p.toLowerCase() === party.toLowerCase())) {
+        throw new Error('Row ' + r.n + ': "' + party + '" is not in the Parties sheet. Add it there first.');
+      }
+      return { n: r.n, date: r.date, desc: r.desc, ref: r.ref, out: r.out, in: r.in, accountCode: a.code, party: party, key: r.key };
+    });
+    const mode = $('mode').value;
+    const go = () => doImport(rows, mode);
+    if (mode === 'POST') ask('Post ' + rows.length + ' journals?', 'The journals will be posted straight away and counted in the General Ledger and financial statements.', 'Import and post', go);
+    else go();
+  } catch (e) { say(e.message, 'error'); }
+});
+function doImport(rows, mode) {
+  setBusy(true); say('Importing ' + rows.length + ' lines...');
+  google.script.run
+    .withSuccessHandler(r => {
+      setBusy(false);
+      say('Batch ' + r.batchId + ': ' + r.imported + ' journals imported as ' + (r.status === 'POSTED' ? 'posted' : 'drafts') +
+        (r.skipped ? '.\n' + r.skipped + ' lines were skipped:\n' + r.errors.join('\n') : '.') +
+        (r.status === 'DRAFT' ? '\nReview them in Draft Management, or post the whole batch below.' : ''), r.skipped ? 'error' : 'success');
+      data = null; $('result').classList.add('hidden'); refreshBatches();
+    })
+    .withFailureHandler(e => { setBusy(false); say(e.message || String(e), 'error'); })
+    .importBankRows({ profile: $('profile').value, mode: mode, rows: rows });
+}
+
+loadSetup();
+</script>
+</body>
+</html>

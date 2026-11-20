@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #eef2ec; --sheet: #ffffff; --ink: #1d2a25; --muted: #5d6b65;
+    --rule: #d2dcd1; --accent: #1f5c46; --accent-soft: #e2eee8;
+    --danger: #a8322a; --danger-soft: #f8e6e4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px; background: var(--paper); color: var(--ink);
+    font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+  }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .sub { color: var(--muted); margin-bottom: 14px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  input[type=search] {
+    flex: 1; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 3px;
+    font: inherit; background: var(--sheet);
+  }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    border: 1px solid transparent; border-radius: 3px; padding: 7px 12px;
+    font: inherit; font-weight: 500; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: wait; }
+  .ghost { background: var(--sheet); border-color: var(--rule); color: var(--ink); }
+  .edit { background: var(--sheet); border-color: var(--accent); color: var(--accent); }
+  .post { background: var(--accent); color: #fff; }
+  .del { background: var(--sheet); border-color: var(--danger); color: var(--danger); }
+  .wrap {
+    background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px;
+    overflow: auto; max-height: 440px;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 860px; }
+  th {
+    position: sticky; top: 0; background: #f4f7f3; text-align: left; font-weight: 600;
+    padding: 9px 10px; border-bottom: 1px solid var(--rule);
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid #e8eee7; vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .actions { display: flex; gap: 6px; }
+  .empty { text-align: center; padding: 34px; color: var(--muted); }
+  #status { margin-top: 10px; color: var(--muted); min-height: 18px; }
+  #status.error { color: var(--danger); }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(20, 30, 26, .45);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .overlay.hidden { display: none; }
+  .dialog { width: 100%; max-width: 420px; background: var(--sheet); border-radius: 4px; padding: 20px; }
+  .dialog h2 { margin: 0 0 8px; font-size: 16px; }
+  .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; }
+  .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<h1>Draft Management</h1>
+<div class="sub">Drafts stay out of the General Ledger and the financial statements until you post them.</div>
+
+<div class="toolbar">
+  <input type="search" id="search" placeholder="Search by Journal ID, description, or reference">
+  <button class="ghost" id="refresh">Refresh</button>
+</div>
+
+<div class="wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Journal ID</th><th>Date</th><th>Description</th><th class="num">Lines</th>
+        <th class="num">Debit</th><th class="num">Credit</th><th>Last updated</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="body"><tr><td colspan="8" class="empty">Loading drafts...</td></tr></tbody>
+  </table>
+</div>
+<div id="status"></div>
+
+<div id="overlay" class="overlay hidden">
+  <div class="dialog">
+    <h2 id="dlgTitle"></h2>
+    <p id="dlgBody"></p>
+    <div class="row">
+      <button class="ghost" id="dlgCancel">Cancel</button>
+      <button class="post" id="dlgOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let drafts = [];
+  let busy = false;
+  let pending = null;
+  const $ = id => document.getElementById(id);
+
+  const fmt = n => Number(n || 0).toLocaleString('id-ID');
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function setStatus(text, isError) {
+    $('status').textContent = text;
+    $('status').className = isError ? 'error' : '';
+  }
+
+  function setBusy(value) {
+    busy = value;
+    document.querySelectorAll('button').forEach(b => { b.disabled = value; });
+  }
+
+  function load() {
+    setStatus('Loading drafts...');
+    google.script.run
+      .withSuccessHandler(list => {
+        drafts = Array.isArray(list) ? list : [];
+        render();
+        setStatus(drafts.length === 1 ? '1 draft.' : drafts.length + ' drafts.');
+      })
+      .withFailureHandler(e => setStatus('Could not load drafts: ' + e.message, true))
+      .getDraftList();
+  }
+
+  function render() {
+    const q = $('search').value.trim().toLowerCase();
+    const list = drafts.filter(d =>
+      [d.journalId, d.description, d.reference].some(v => String(v || '').toLowerCase().includes(q)));
+    if (!list.length) {
+      $('body').innerHTML = '<tr><td colspan="8" class="empty">' +
+        (drafts.length ? 'No draft matches your search.' : 'No drafts. Save a journal as Draft to see it here.') +
+        '</td></tr>';
+      return;
+    }
+    $('body').innerHTML = list.map(d => `
+      <tr>
+        <td><strong>${esc(d.journalId)}</strong></td>
+        <td>${esc(d.date)}</td>
+        <td>${esc(d.description)}<div class="sub" style="margin:0">${esc(d.journalType)}</div></td>
+        <td class="num">${d.lineCount}</td>
+        <td class="num">${fmt(d.debit)}</td>
+        <td class="num">${fmt(d.credit)}</td>
+        <td>${esc(d.updatedAt)}</td>
+        <td><div class="actions">
+          <button class="edit" data-act="edit" data-id="${esc(d.journalId)}">Edit</button>
+          <button class="post" data-act="post" data-id="${esc(d.journalId)}">Post</button>
+          <button class="del" data-act="delete" data-id="${esc(d.journalId)}">Delete</button>
+        </div></td>
+      </tr>`).join('');
+  }
+
+  function ask(title, body, okLabel, onOk) {
+    $('dlgTitle').textContent = title;
+    $('dlgBody').textContent = body;
+    $('dlgOk').textContent = okLabel;
+    pending = onOk;
+    $('overlay').classList.remove('hidden');
+  }
+  function closeAsk() { $('overlay').classList.add('hidden'); pending = null; }
+  $('dlgCancel').addEventListener('click', closeAsk);
+  $('dlgOk').addEventListener('click', () => { const fn = pending; closeAsk(); if (fn) fn(); });
+
+  function run(label, serverFn, id) {
+    setBusy(true);
+    setStatus(label);
+    google.script.run
+      .withSuccessHandler(r => { setBusy(false); setStatus(r && r.message ? r.message : 'Done.'); load(); })
+      .withFailureHandler(e => { setBusy(false); setStatus(e.message || String(e), true); })
+      [serverFn](id);
+  }
+
+  $('body').addEventListener('click', ev => {
+    const btn = ev.target.closest('button[data-act]');
+    if (!btn || busy) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.act === 'edit') {
+      setBusy(true);
+      setStatus('Opening ' + id + '...');
+      google.script.run
+        .withSuccessHandler(() => google.script.host.close())
+        .withFailureHandler(e => { setBusy(false); setStatus('Could not open the draft: ' + e.message, true); })
+        .openDraftEditor(id);
+    } else if (btn.dataset.act === 'post') {
+      ask('Post ' + id + '?',
+        'The journal will be posted and counted in the General Ledger and financial statements.\nPosted journals cannot be edited or deleted.',
+        'Post journal', () => run('Posting...', 'postDraftFromManagement', id));
+    } else if (btn.dataset.act === 'delete') {
+      ask('Delete ' + id + '?', 'This draft will be removed permanently.', 'Delete draft',
+        () => run('Deleting...', 'deleteDraft', id));
+    }
+  });
+
+  $('search').addEventListener('input', render);
+  $('refresh').addEventListener('click', load);
+  load();
+</script>
+</body>
+</html>

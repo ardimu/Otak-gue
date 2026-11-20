@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root { --paper: #eef2ec; --sheet: #fff; --ink: #1d2a25; --muted: #5d6b65; --rule: #d2dcd1; --accent: #1f5c46; --accent-soft: #e2eee8; --danger: #a8322a; --warn: #8a5a00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--paper); color: var(--ink); font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  section { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; margin-top: 12px; }
+  .row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  input { padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; font: inherit; color: var(--ink); background: #fff; }
+  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { border: 1px solid transparent; border-radius: 3px; padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .primary { background: var(--accent); color: #fff; }
+  .outline { background: #fff; border-color: var(--accent); color: var(--accent); }
+  .quiet { background: #fff; border-color: #9fb0a4; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--rule); background: #f4f7f3; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e8eee7; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .warn { color: var(--warn); font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+  .note { color: var(--muted); font-size: 12px; }
+  #message { white-space: pre-wrap; margin-top: 12px; min-height: 18px; }
+  #message.error { color: var(--danger); }
+  #message.success { color: var(--accent); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Period-end tools</h1>
+<p class="sub">Everything here creates draft journals. Review them in Draft Management, then post them.</p>
+
+<section>
+  <div class="row">
+    <div><label for="month">Month</label><input type="month" id="month"></div>
+    <span class="note">Used by depreciation, reversing entries, and year-end closing.</span>
+  </div>
+</section>
+
+<section>
+  <h2>Depreciation</h2>
+  <p class="sub">Straight-line, from the Fixed Assets sheet. Months already booked are not booked again, and a missed month is caught up.</p>
+  <div class="row"><button class="outline" id="btnDepPreview" type="button">Preview</button><button class="primary" id="btnDepCreate" type="button" disabled>Create draft journal</button></div>
+  <div id="depBox"></div>
+</section>
+
+<section>
+  <h2>Reversing entries</h2>
+  <p class="sub">Choose posted adjusting entries of the month to reverse (usually accruals). The reversal is dated at the start of the next month.</p>
+  <div class="row">
+    <button class="outline" id="btnAdjList" type="button">List adjusting entries</button>
+    <div><label for="revDate">Reversal date</label><input type="date" id="revDate"></div>
+    <button class="primary" id="btnRevCreate" type="button" disabled>Create reversing drafts</button>
+  </div>
+  <div id="adjBox"></div>
+  <div class="row" style="margin-top:14px">
+    <div><label for="oneId">Or reverse any posted journal by its ID</label><input id="oneId" placeholder="JV-2026-00012"></div>
+    <button class="quiet" id="btnOne" type="button">Create reversing draft</button>
+  </div>
+</section>
+
+<section>
+  <h2>Year-end closing</h2>
+  <p class="sub">Choose the last month of the financial year. Profit and loss accounts are closed to Income Summary, then to Retained Earnings. Owner withdrawals and dividends are closed too.</p>
+  <div class="row"><button class="outline" id="btnClosePreview" type="button">Preview</button><button class="primary" id="btnCloseCreate" type="button" disabled>Create closing drafts</button></div>
+  <div id="closeBox"></div>
+</section>
+
+<section>
+  <h2>Lock date</h2>
+  <p class="sub">Journals dated on or before this date cannot be posted.</p>
+  <div class="row">
+    <div><label for="lockDate">Locked through</label><input type="date" id="lockDate"></div>
+    <button class="primary" id="btnLock" type="button">Save</button>
+    <button class="quiet" id="btnUnlock" type="button">Clear the lock</button>
+  </div>
+</section>
+
+<div id="message" role="status" aria-live="polite"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n || 0).toLocaleString('id-ID');
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let busy = false;
+
+function say(t, kind) { $('message').textContent = t || ''; $('message').className = kind || ''; }
+function setBusy(v) { busy = v; document.querySelectorAll('button').forEach(b => { b.disabled = v; }); if (!v) refreshButtons(); }
+function refreshButtons() {
+  $('btnDepCreate').disabled = !(state.dep && state.dep.total > 0);
+  $('btnRevCreate').disabled = !document.querySelector('#adjBox input:checked');
+  $('btnCloseCreate').disabled = !(state.close && !state.close.existing);
+}
+const state = { dep: null, close: null };
+
+function call(fn, arg, ok, label) {
+  if (busy) return;
+  setBusy(true); say(label || 'Working...');
+  google.script.run
+    .withSuccessHandler(r => { setBusy(false); say(''); ok(r); })
+    .withFailureHandler(e => { setBusy(false); say(e.message || String(e), 'error'); })
+    [fn](arg);
+}
+function month() { if (!$('month').value) throw new Error('Choose the month first.'); return $('month').value; }
+function nextMonthFirst(m) { const [y, mo] = m.split('-').map(Number); return (mo === 12 ? y + 1 : y) + '-' + String(mo === 12 ? 1 : mo + 1).padStart(2, '0') + '-01'; }
+$('month').addEventListener('change', () => { if ($('month').value) $('revDate').value = nextMonthFirst($('month').value); state.dep = null; state.close = null; $('depBox').innerHTML = ''; $('adjBox').innerHTML = ''; $('closeBox').innerHTML = ''; refreshButtons(); });
+
+/* Depreciation */
+$('btnDepPreview').addEventListener('click', () => {
+  try {
+    call('previewDepreciation', month(), r => {
+      state.dep = r;
+      $('depBox').innerHTML = (r.lines.length ? '<table><thead><tr><th>Asset</th><th class="num">Scheduled to date</th><th class="num">Already booked</th><th class="num">To book now</th></tr></thead><tbody>' +
+        r.lines.map(l => `<tr><td>${esc(l.id)} ${esc(l.name)}</td><td class="num">${fmt(l.scheduled)}</td><td class="num">${fmt(l.posted)}</td><td class="num">${fmt(l.due)}</td></tr>`).join('') +
+        `<tr><td><b>Total</b></td><td></td><td></td><td class="num"><b>${fmt(r.total)}</b></td></tr></tbody></table>` : '<p class="note">No asset to depreciate. Add assets to the Fixed Assets sheet.</p>') +
+        (r.warnings.length ? '<div class="warn">' + esc(r.warnings.join('\n')) + '</div>' : '');
+      refreshButtons();
+    }, 'Calculating...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('btnDepCreate').addEventListener('click', () => {
+  try { call('createDepreciation', month(), r => { say(r.message, 'success'); state.dep = null; $('depBox').innerHTML = ''; refreshButtons(); }, 'Creating the draft...'); } catch (e) { say(e.message, 'error'); }
+});
+
+/* Reversing */
+$('btnAdjList').addEventListener('click', () => {
+  try {
+    call('listAdjustingEntries', month(), list => {
+      $('adjBox').innerHTML = list.length ? '<table><thead><tr><th></th><th>Journal</th><th>Date</th><th>Description</th><th class="num">Amount</th></tr></thead><tbody>' +
+        list.map(j => `<tr><td><input type="checkbox" value="${esc(j.id)}" ${j.reversed ? 'disabled' : ''}></td><td>${esc(j.id)}</td><td>${esc(j.date)}</td><td>${esc(j.description)}${j.reversed ? ' <span class="note">(already reversed)</span>' : ''}</td><td class="num">${fmt(j.total)}</td></tr>`).join('') + '</tbody></table>'
+        : '<p class="note">No posted adjusting entries (other than depreciation) in this month.</p>';
+      refreshButtons();
+    }, 'Looking...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('adjBox').addEventListener('change', refreshButtons);
+function reverse(ids) {
+  if (!$('revDate').value) { say('Enter the reversal date.', 'error'); return; }
+  call('createReversals', { ids: ids, date: $('revDate').value }, r => {
+    say(r.message + (r.errors.length ? '\n' + r.errors.join('\n') : ''), r.errors.length ? 'error' : 'success');
+    $('adjBox').innerHTML = ''; refreshButtons();
+  }, 'Creating reversing drafts...');
+}
+$('btnRevCreate').addEventListener('click', () => reverse(Array.from(document.querySelectorAll('#adjBox input:checked')).map(c => c.value)));
+$('btnOne').addEventListener('click', () => { const id = $('oneId').value.trim(); if (!id) { say('Enter the journal ID.', 'error'); return; } reverse([id]); });
+
+/* Closing */
+$('btnClosePreview').addEventListener('click', () => {
+  try {
+    call('previewClosing', month(), r => {
+      state.close = r;
+      $('closeBox').innerHTML = `<p>Financial year from period ${esc(r.from)}. ${r.accounts} profit and loss accounts and ${r.distributions} distribution accounts will be closed.<br>` +
+        `${r.profit >= 0 ? 'Profit' : 'Loss'} for the year: <b>Rp ${fmt(Math.abs(r.profit))}</b>.</p>` +
+        (r.existing ? '<div class="warn">Closing journals already exist for this year. Delete the draft ones first to create them again.</div>' : '') +
+        (r.draftsInYear ? `<div class="warn">${r.draftsInYear} draft journal(s) are dated in this financial year. They are not part of the closing. Post or delete them first, or the closing will be out of date.</div>` : '');
+      refreshButtons();
+    }, 'Calculating...');
+  } catch (e) { say(e.message, 'error'); }
+});
+$('btnCloseCreate').addEventListener('click', () => {
+  try { call('createClosing', month(), r => { say(r.message, 'success'); state.close = null; $('closeBox').innerHTML = ''; refreshButtons(); }, 'Creating the closing drafts...'); } catch (e) { say(e.message, 'error'); }
+});
+
+/* Lock */
+$('btnLock').addEventListener('click', () => { if (!$('lockDate').value) { say('Choose the date to lock through.', 'error'); return; } call('setLockDate', $('lockDate').value, r => say(r.message, 'success'), 'Saving...'); });
+$('btnUnlock').addEventListener('click', () => call('setLockDate', '', r => { $('lockDate').value = ''; say(r.message, 'success'); }, 'Saving...'));
+
+google.script.run.withSuccessHandler(s => { $('month').value = s.month; $('lockDate').value = s.lockDate; $('revDate').value = nextMonthFirst(s.month); })
+  .withFailureHandler(e => say(e.message || String(e), 'error')).getPeriodEndSetup();
+</script>
+</body>
+</html>

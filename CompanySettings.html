@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --ink: #17212b;
+      --muted: #66727e;
+      --line: #dce2e8;
+      --accent: #1f6f58;
+      --accent-soft: #e8f4ef;
+      --warn: #8a5a00;
+      --warn-soft: #fff5dc;
+      --danger: #a8322a;
+      --danger-soft: #fdecea;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      background: linear-gradient(160deg, #eef3f6 0%, #f8fafc 55%, #ffffff 100%);
+      color: var(--ink);
+      font: 13px/1.5 "Segoe UI", Arial, sans-serif;
+    }
+    .wrap { max-width: 940px; margin: 0 auto; padding: 22px 22px 30px; }
+    .hero { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 4px 0 4px; font-size: 22px; letter-spacing: -.01em; }
+    .sub { margin: 0; color: var(--muted); }
+    .pill {
+      padding: 7px 13px; border-radius: 999px; font-size: 11px; font-weight: 700;
+      letter-spacing: .08em; background: var(--warn-soft); color: var(--warn); white-space: nowrap;
+    }
+    .pill.live { background: var(--accent-soft); color: var(--accent); }
+    .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+    .tab {
+      border: 0; background: transparent; color: var(--muted); padding: 10px 15px;
+      font: inherit; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .panel { display: none; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 22px; box-shadow: 0 10px 30px rgba(23, 33, 43, .05); }
+    .panel.active { display: block; }
+    .card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { margin: 0 0 4px; font-size: 15px; }
+    .card .note { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+    .grid { display: grid; gap: 13px 16px; }
+    .g2 { grid-template-columns: 1fr 1fr; }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+    label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
+    input, select, textarea {
+      width: 100%; padding: 9px 10px; border: 1px solid #cbd5de; border-radius: 7px;
+      background: #fff; color: var(--ink); font: inherit;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    input[readonly], select:disabled, input:disabled { background: #f1f4f6; color: #7b8793; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid rgba(31, 111, 88, .25); border-color: var(--accent); }
+    .callout { border-radius: 8px; padding: 11px 13px; font-size: 12px; margin-bottom: 15px; }
+    .callout.warn { background: var(--warn-soft); color: var(--warn); border: 1px solid #f0d89a; }
+    .callout.danger { background: var(--danger-soft); color: var(--danger); border: 1px solid #f3c3bf; }
+    .callout.info { background: var(--accent-soft); color: var(--accent); border: 1px solid #bcdccf; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .between { justify-content: space-between; }
+    button {
+      border: 1px solid transparent; border-radius: 7px; padding: 9px 14px;
+      font: inherit; font-weight: 600; cursor: pointer;
+    }
+    button.primary { background: var(--accent); color: #fff; }
+    button.secondary { background: #fff; border-color: #cbd5de; color: var(--ink); }
+    button.danger { background: #fff; border-color: #d99a96; color: var(--danger); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 16px; }
+    .logo-box { display: flex; align-items: center; gap: 14px; }
+    .logo-preview {
+      width: 74px; height: 74px; border: 1px dashed #b9c5ce; border-radius: 10px;
+      background: #f8fafb; object-fit: contain; padding: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 8px; border-bottom: 1px solid var(--line); }
+    td { padding: 7px 8px; border-bottom: 1px solid #eef2f5; }
+    td.select-cell { width: 62%; }
+    .checklist { list-style: none; margin: 14px 0 0; padding: 0; }
+    .checklist li { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #eef2f5; }
+    .status { font-weight: 700; color: var(--danger); }
+    .status.ok { color: var(--accent); }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(15, 25, 35, .48); display: flex;
+      align-items: center; justify-content: center; padding: 20px; z-index: 50;
+    }
+    .modal { width: 100%; max-width: 520px; background: #fff; border-radius: 12px; padding: 22px; max-height: 90vh; overflow: auto; }
+    .modal h2 { margin: 0 0 6px; font-size: 18px; }
+    .toast {
+      position: fixed; right: 20px; bottom: 20px; max-width: 420px; z-index: 60;
+      background: #17212b; color: #fff; border-radius: 8px; padding: 11px 14px; box-shadow: 0 12px 30px rgba(0,0,0,.2);
+    }
+    .toast.error { background: var(--danger); }
+    @media (max-width: 700px) {
+      .g2, .g3 { grid-template-columns: 1fr; }
+      .hero { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">System settings</div>
+        <h1>Company Profile &amp; Settings</h1>
+        <p class="sub" id="modeLine">Loading settings...</p>
+      </div>
+      <div class="pill" id="modePill">PRACTICE</div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab active" type="button" data-tab="profile">Profile</button>
+      <button class="tab" type="button" data-tab="accounting">Accounting</button>
+      <button class="tab" type="button" data-tab="accounts">Accounts</button>
+      <button class="tab" type="button" data-tab="system">System</button>
+    </div>
+
+    <form class="panel active" id="profilePanel" data-panel="profile">
+      <div class="card">
+        <h2>Company identity</h2>
+        <p class="note">Safe to change at any time. Company Name and NPWP appear in every report header.</p>
+        <div class="grid g2">
+          <div><label for="profileCompanyName">Company Name</label><input id="profileCompanyName"></div>
+          <div><label for="profileLegalName">Legal Name</label><input id="profileLegalName"></div>
+          <div><label for="profileNpwp">NPWP</label><input id="profileNpwp"></div>
+          <div><label for="profileNib">NIB</label><input id="profileNib"></div>
+          <div><label for="profilePhone">Phone</label><input id="profilePhone"></div>
+          <div><label for="profileEmail">Email</label><input id="profileEmail" type="email"></div>
+          <div style="grid-column:1/-1"><label for="profileAddress">Address</label><textarea id="profileAddress"></textarea></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Company Logo</h2>
+        <p class="note">Upload a small image. It is shown in the report header.</p>
+        <div class="logo-box">
+          <img class="logo-preview" id="logoPreview" alt="Company logo preview" hidden>
+          <div class="row">
+            <input id="logoFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+            <button class="secondary" id="uploadLogo" type="button">Save logo</button>
+            <button class="secondary" id="removeLogo" type="button">Remove logo</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions"><button class="primary" type="submit">Save profile</button></div>
+    </form>
+
+    <form class="panel" id="accountingPanel" data-panel="accounting">
+      <div class="callout warn">Business Type only changes the default accounts in Assisted Entry. Existing journals are not affected. Fiscal Year Start Month and Currency are locked after the conditions below are met.</div>
+      <div class="card">
+        <h2>Accounting defaults</h2>
+        <p class="note">These settings control new transactions only.</p>
+        <div class="grid g3">
+          <div><label for="businessType">Business Type</label><select id="businessType"></select></div>
+          <div><label for="fiscalStartMonth">Fiscal Year Start Month</label><select id="fiscalStartMonth"></select></div>
+          <div><label for="currency">Currency</label><input id="currency" value="IDR" readonly></div>
+          <div><label for="inventoryMethod">Inventory Method</label><select id="inventoryMethod" disabled><option>Perpetual</option></select></div>
+        </div>
+        <p class="note" id="accountingLocks" style="margin-top:12px"></p>
+      </div>
+      <div class="actions"><button class="primary" type="submit">Save accounting settings</button></div>
+    </form>
+
+    <form class="panel" id="accountsPanel" data-panel="accounts">
+      <div class="callout info">Choose accounts from the active COA. Changes apply only to new transactions.</div>
+      <div class="card">
+        <h2>Default account mapping</h2>
+        <p class="note">Every account must exist and be active in the COA.</p>
+        <table>
+          <thead><tr><th>Setting</th><th>Account</th></tr></thead>
+          <tbody id="accountRows"></tbody>
+        </table>
+      </div>
+      <div class="actions"><button class="primary" type="submit">Save default accounts</button></div>
+    </form>
+
+    <form class="panel" id="systemPanel" data-panel="system">
+      <div class="card">
+        <h2>Mode</h2>
+        <p class="note" id="modeNote"></p>
+        <div class="row between">
+          <div><strong id="systemMode">PRACTICE</strong><div class="sub" id="goLiveInfo"></div></div>
+          <div class="row">
+            <button class="primary" id="goLiveButton" type="button">Go Live</button>
+            <button class="danger" id="resetButton" type="button">Reset Practice Data</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Period and bank controls</h2>
+        <p class="note">Journals dated on or before the Lock Date cannot be posted or edited.</p>
+        <div class="grid g2">
+          <div><label for="lockDate">Lock Date</label><input id="lockDate" type="date"></div>
+          <div><label for="bankSuspenseAccount">Bank Suspense Account</label><select id="bankSuspenseAccount"></select></div>
+        </div>
+      </div>
+      <div class="actions"><button class="primary" type="submit">Save system settings</button></div>
+    </form>
+  </div>
+
+  <div class="overlay" id="goLiveOverlay" hidden>
+    <div class="modal">
+      <h2>Go Live checklist</h2>
+      <p class="sub">Review every item before moving to LIVE mode.</p>
+      <ul class="checklist" id="goLiveChecklist"></ul>
+      <div class="callout danger" style="margin-top:16px">All practice data will be deleted.</div>
+      <label for="goLiveConfirm">Type the exact company name to confirm</label>
+      <input id="goLiveConfirm" autocomplete="off">
+      <div class="sub" id="goLiveMatch" style="margin-top:5px"></div>
+      <div class="actions">
+        <button class="secondary" id="goLiveCancel" type="button">Cancel</button>
+        <button class="primary" id="goLiveConfirmButton" type="button" disabled>Go Live</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script>
+    let DATA = null;
+    const $ = id => document.getElementById(id);
+
+    function toast(message, isError) {
+      const box = $('toast');
+      box.textContent = message || '';
+      box.className = isError ? 'toast error' : 'toast';
+      box.hidden = false;
+      clearTimeout(box.timer);
+      box.timer = setTimeout(() => { box.hidden = true; }, 3600);
+    }
+
+    function runServer(name, args, done) {
+      const runner = google.script.run
+        .withSuccessHandler(result => {
+          toast(result && result.message ? result.message : 'Saved.');
+          if (done) done(result);
+        })
+        .withFailureHandler(error => toast(error && error.message ? error.message : String(error), true));
+      if (args === undefined) runner[name](); else runner[name](args);
+    }
+
+    function load() {
+      google.script.run
+        .withSuccessHandler(render)
+        .withFailureHandler(error => toast(error && error.message ? error.message : String(error), true))
+        .getCompanySettings();
+    }
+
+    function fillSelect(select, values, selected, label) {
+      select.innerHTML = '';
+      values.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.value;
+        option.textContent = item.text || item.value;
+        if (String(item.value) === String(selected)) option.selected = true;
+        select.appendChild(option);
+      });
+      if (!values.length && label) {
+        const option = document.createElement('option');
+        option.textContent = label;
+        select.appendChild(option);
+      }
+    }
+
+    function render(data) {
+      DATA = data;
+      $('modePill').textContent = data.mode;
+      $('modePill').className = data.mode === 'LIVE' ? 'pill live' : 'pill';
+      $('modeLine').textContent = data.mode === 'LIVE'
+        ? 'LIVE MODE. Company data is active and one-way mode protections are in place.'
+        : 'PRACTICE MODE — not company data.';
+
+      const profileIds = {
+        'Company Name': 'profileCompanyName',
+        'Legal Name': 'profileLegalName',
+        'NPWP': 'profileNpwp',
+        'NIB': 'profileNib',
+        'Address': 'profileAddress',
+        'Phone': 'profilePhone',
+        'Email': 'profileEmail'
+      };
+      Object.keys(profileIds).forEach(key => {
+        const el = $(profileIds[key]);
+        if (el) el.value = data.profile[key] || '';
+      });
+      const preview = $('logoPreview');
+      if (data.profile['Company Logo']) {
+        preview.src = data.profile['Company Logo'];
+        preview.hidden = false;
+      } else {
+        preview.removeAttribute('src');
+        preview.hidden = true;
+      }
+
+      fillSelect($('businessType'), data.accounting.businessTypes.map(v => ({ value: v, text: v })), data.accounting.businessType);
+      fillSelect($('fiscalStartMonth'), Array.from({ length: 12 }, (_, i) => ({ value: i + 1, text: String(i + 1) })), data.accounting.fiscalStartMonth);
+      $('currency').value = 'IDR';
+      $('inventoryMethod').value = 'Perpetual';
+      $('fiscalStartMonth').disabled = data.flags.fiscalLocked;
+      $('currency').disabled = data.flags.currencyLocked;
+      const locks = [];
+      if (data.flags.fiscalLocked) locks.push('Fiscal Year Start Month is locked because a posted journal exists.');
+      if (data.flags.currencyLocked) locks.push('Currency is locked after Go Live.');
+      $('accountingLocks').textContent = locks.join(' ');
+
+      const body = $('accountRows');
+      body.innerHTML = '';
+      data.accounts.forEach(account => {
+        const tr = document.createElement('tr');
+        const nameCell = document.createElement('td');
+        nameCell.textContent = account.label;
+        const selectCell = document.createElement('td');
+        selectCell.className = 'select-cell';
+        const select = document.createElement('select');
+        select.setAttribute('data-account-key', account.key);
+        fillSelect(select, account.options.map(o => ({ value: o.code, text: o.code + ' - ' + o.name })), account.code, 'No active accounts');
+        selectCell.appendChild(select);
+        tr.appendChild(nameCell);
+        tr.appendChild(selectCell);
+        body.appendChild(tr);
+      });
+
+      $('systemMode').textContent = data.mode;
+      $('modeNote').textContent = data.mode === 'LIVE'
+        ? 'LIVE mode is one way and cannot go back to PRACTICE.'
+        : 'PRACTICE data is not company data. Go Live deletes practice journals, import logs, and staged imports.';
+      $('goLiveInfo').textContent = data.system.goLiveDate
+        ? 'Go Live Date: ' + data.system.goLiveDate + ' | Went Live By: ' + (data.system.wentLiveBy || '-')
+        : '';
+      $('goLiveButton').hidden = data.mode === 'LIVE';
+      $('resetButton').hidden = !data.system.resetAvailable;
+      $('lockDate').value = data.system.lockDate || '';
+      fillSelect($('bankSuspenseAccount'), [{ value: '', text: '(None)' }].concat(
+        data.system.suspenseOptions.map(o => ({ value: o.code, text: o.code + ' - ' + o.name }))), data.system.suspense);
+      renderChecklist(data.checklist);
+      updateGoLiveButton();
+    }
+
+    function renderChecklist(checklist) {
+      const list = $('goLiveChecklist');
+      list.innerHTML = '';
+      checklist.forEach(item => {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        const status = document.createElement('span');
+        status.className = item.ok ? 'status ok' : 'status';
+        status.textContent = item.ok ? 'Ready' : 'Missing';
+        li.appendChild(label);
+        li.appendChild(status);
+        list.appendChild(li);
+      });
+    }
+
+    function updateGoLiveButton() {
+      if (!DATA) return;
+      const exact = DATA.profile['Company Name'] || '';
+      const typed = $('goLiveConfirm').value.trim();
+      const ready = DATA.checklist.every(item => item.ok) && typed === exact;
+      $('goLiveConfirmButton').disabled = !ready;
+      $('goLiveMatch').textContent = !typed ? '' : (ready ? 'Company name matches.' : 'Company name does not match.');
+    }
+
+    function resizeLogo(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const image = new Image();
+          image.onload = () => {
+            let size = 180;
+            let quality = 0.82;
+            let data = '';
+            for (let attempt = 0; attempt < 8; attempt++) {
+              const canvas = document.createElement('canvas');
+              const ratio = Math.min(1, size / Math.max(image.width, image.height));
+              canvas.width = Math.max(1, Math.round(image.width * ratio));
+              canvas.height = Math.max(1, Math.round(image.height * ratio));
+              canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+              data = canvas.toDataURL('image/jpeg', quality);
+              if (data.length <= 45000) { resolve(data); return; }
+              size = Math.round(size * 0.75);
+              quality = Math.max(0.45, quality - 0.1);
+            }
+            reject(new Error('Logo is too large even after resizing.'));
+          };
+          image.onerror = () => reject(new Error('Image could not be read.'));
+          image.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error('File could not be read.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+        document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
+      });
+    });
+
+    $('profilePanel').addEventListener('submit', event => {
+      event.preventDefault();
+      runServer('saveCompanyProfile', {
+        'Company Name': $('profileCompanyName').value,
+        'Legal Name': $('profileLegalName').value,
+        'NPWP': $('profileNpwp').value,
+        'NIB': $('profileNib').value,
+        'Address': $('profileAddress').value,
+        'Phone': $('profilePhone').value,
+        'Email': $('profileEmail').value
+      }, load);
+    });
+
+    $('logoFile').addEventListener('change', () => {
+      const file = $('logoFile').files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { $('logoPreview').src = reader.result; $('logoPreview').hidden = false; };
+      reader.readAsDataURL(file);
+    });
+
+    $('uploadLogo').addEventListener('click', () => {
+      const file = $('logoFile').files[0];
+      if (!file) { toast('Choose an image first.', true); return; }
+      resizeLogo(file).then(data => runServer('saveCompanyLogo', data, load)).catch(error => toast(error.message, true));
+    });
+
+    $('removeLogo').addEventListener('click', () => runServer('removeCompanyLogo', undefined, load));
+
+    $('accountingPanel').addEventListener('submit', event => {
+      event.preventDefault();
+      runServer('saveCompanyAccounting', {
+        businessType: $('businessType').value,
+        fiscalStartMonth: Number($('fiscalStartMonth').value),
+        currency: 'IDR',
+        inventoryMethod: 'Perpetual'
+      }, load);
+    });
+
+    $('accountsPanel').addEventListener('submit', event => {
+      event.preventDefault();
+      const mappings = {};
+      document.querySelectorAll('[data-account-key]').forEach(select => {
+        mappings[select.getAttribute('data-account-key')] = select.value;
+      });
+      runServer('saveCompanyAccounts', { mappings: mappings }, load);
+    });
+
+    $('systemPanel').addEventListener('submit', event => {
+      event.preventDefault();
+      runServer('saveCompanySystem', {
+        lockDate: $('lockDate').value,
+        bankSuspenseAccount: $('bankSuspenseAccount').value
+      }, load);
+    });
+
+    $('resetButton').addEventListener('click', () => {
+      if (!confirm('Delete all practice journals, import logs, and staged imports?')) return;
+      runServer('resetPracticeData', undefined, load);
+    });
+
+    $('goLiveButton').addEventListener('click', () => {
+      $('goLiveOverlay').hidden = false;
+      $('goLiveConfirm').value = '';
+      updateGoLiveButton();
+    });
+
+    $('goLiveCancel').addEventListener('click', () => { $('goLiveOverlay').hidden = true; });
+    $('goLiveConfirm').addEventListener('input', updateGoLiveButton);
+    $('goLiveConfirmButton').addEventListener('click', () => {
+      runServer('goLive', $('goLiveConfirm').value, () => {
+        $('goLiveOverlay').hidden = true;
+        load();
+      });
+    });
+
+    load();
+  </script>
+</body>
+</html>

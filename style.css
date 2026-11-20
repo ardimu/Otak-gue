@@ -1,0 +1,119 @@
+<style>
+  :root {
+    --bg: #f5f6f7;
+    --text: #24292e;
+    --muted: #9aa3ab;
+    --rule: #4b5158;
+    --hover: #e3e5e8;
+    --error: #a8322a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Segoe UI", Arial, sans-serif;
+  }
+
+  .accounting-menu {
+    width: 100%;
+    padding: 14px 10px 18px;
+    list-style: none;
+  }
+
+  .brand {
+    padding: 0 10px 12px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  .group-title {
+    padding: 6px 10px 4px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: default;
+    user-select: none;
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: calc(100% - 12px);
+    margin: 1px 0 1px 12px;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  button.menu-item { appearance: none; }
+
+  .menu-item:hover,
+  .menu-item:focus-visible,
+  .submenu-item:hover,
+  .submenu-item:focus-visible {
+    background: var(--hover);
+    outline: none;
+  }
+
+  .icon {
+    flex: 0 0 20px;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .label { flex: 1; }
+
+  .arrow {
+    flex: 0 0 auto;
+    font-weight: 700;
+    transition: transform 120ms ease;
+  }
+
+  .submenu-toggle[aria-expanded="true"] .arrow { transform: rotate(90deg); }
+
+  .divider {
+    height: 1px;
+    margin: 10px 10px;
+    background: var(--rule);
+    border: 0;
+  }
+
+  .submenu {
+    margin: 0 0 4px 24px;
+    padding: 2px 0;
+  }
+
+  .submenu-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .status {
+    margin: 12px 10px 0;
+    padding: 8px 10px;
+    border-radius: 3px;
+    background: #f8e6e4;
+    color: var(--error);
+    white-space: pre-wrap;
+  }
+</style>
