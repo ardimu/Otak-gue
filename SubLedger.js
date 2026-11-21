@@ -98,15 +98,30 @@ function agingReports_(parties, side, asOf, meta) {
   return { summary: summary, detail: detail, totals: { open: r2_(open), unapplied: r2_(un), overdue: r2_(tot[1] + tot[2] + tot[3] + tot[4]) } };
 }
 
-function generateAging() {
-  const ui = SpreadsheetApp.getUi();
+function generateAging(asOf, options) {
+  const web = !!(options && options.web);
+  const ui = web ? null : SpreadsheetApp.getUi();
   const today = isoDate_(new Date());
-  const res = ui.prompt(tr_('Receivables and payables aging', 'Umur piutang dan utang'),
-    tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.\nOnly posted journals are included.',
-      'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.\nHanya jurnal yang sudah diposting yang disertakan.'), ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK) return;
-  let asOf;
-  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert(tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.')); return; }
+  let raw = asOf;
+  if (!web) {
+    const res = ui.prompt(tr_('Receivables and payables aging', 'Umur piutang dan utang'),
+      tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.\nOnly posted journals are included.',
+        'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.\nHanya jurnal yang sudah diposting yang disertakan.'), ui.ButtonSet.OK_CANCEL);
+    if (res.getSelectedButton() !== ui.Button.OK) return;
+    raw = res.getResponseText() || today;
+  }
+  raw = String(raw || today).trim();
+  const dateError = tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    if (web) throw new Error(dateError);
+    ui.alert(dateError); return;
+  }
+  let asOfDate;
+  try { asOfDate = parseLocalDate_(raw); }
+  catch (e) {
+    if (web) throw new Error(dateError);
+    ui.alert(dateError); return;
+  }
   const s = readSettings_();
   const code = k => String(s[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim();
   const posted = loadPostedForReports_();
@@ -114,13 +129,15 @@ function generateAging() {
   const out = [];
   [['AR', 'ar', 'AR'], ['AP', 'ap', 'AP']].forEach(d => {
     const lines = posted.filter(l => l.code === code(d[1]));
-    const rep = agingReports_(agingBuild_(lines, d[0], asOf), d[0], asOf, meta);
+    const rep = agingReports_(agingBuild_(lines, d[0], asOfDate), d[0], asOfDate, meta);
     writeReport_(d[2] + ' Aging', rep.summary);
     writeReport_(d[2] + ' Open Items', rep.detail);
     out.push((d[0] === 'AR' ? tr_('Receivables', 'Piutang') : tr_('Payables', 'Utang')) + tr_(': open Rp ', ': saldo belum lunas Rp ') + fmt_(rep.totals.open) +
       tr_(', overdue Rp ', ', telah jatuh tempo Rp ') + fmt_(rep.totals.overdue) +
       (rep.totals.unapplied ? tr_(', unapplied payments Rp ', ', pembayaran belum dialokasikan Rp ') + fmt_(rep.totals.unapplied) : ''));
   });
-  ui.alert(tr_('Aging as at ' + isoDate_(asOf), 'Umur pada ' + isoDate_(asOf)), out.join('\n') +
-    tr_('\n\nSheets: ', '\n\nLembar: ') + 'AR Aging, AR Open Items, AP Aging, AP Open Items' + '.', ui.ButtonSet.OK);
+  const sheets = 'AR Aging, AR Open Items, AP Aging, AP Open Items';
+  const message = out.join('\n') + tr_('\n\nSheets: ', '\n\nLembar: ') + sheets + '.';
+  if (web) return { success: true, message: message, sheets: sheets };
+  ui.alert(tr_('Aging as at ' + isoDate_(asOfDate), 'Umur pada ' + isoDate_(asOfDate)), message, ui.ButtonSet.OK);
 }

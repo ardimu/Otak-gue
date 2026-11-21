@@ -196,8 +196,8 @@ function bulkDrafts_(specs, batchId) {
   return out;
 }
 
-function processStockMovements() {
-  const ui = SpreadsheetApp.getUi();
+function processStockMovements(options) {
+  const web = !!(options && options.web);
   const r = withLock_(() => {
     const items = readItems_(), rows = readMovements_();
     if (!rows.length) throw new Error(tr_('The Stock Movements sheet has no rows. Type movements in columns A to G first.',
@@ -234,14 +234,16 @@ function processStockMovements() {
     const errors = eng.res.filter(o => o.status === 'ERROR').length;
     return { done: eng.res.filter(o => o.status === 'READY').length, created: created, errors: errors, batchId: batchId };
   });
-  ui.alert(tr_('Stock movements processed', 'Pergerakan persediaan diproses'),
-    r.done + tr_(' movement(s) processed.\n', ' pergerakan diproses.\n') +
+  const message = r.done + tr_(' movement(s) processed.\n', ' pergerakan diproses.\n') +
     r.created + tr_(' draft journal(s) created', ' jurnal draf dibuat') +
     (r.created ? tr_(' (batch ', ' (batch ') + r.batchId + ')' : '') + tr_('.\n', '.\n') +
     (r.errors ? r.errors + tr_(' row(s) have an error. Read column M of the Stock Movements sheet, fix them, and process again.',
       ' baris memiliki kesalahan. Baca kolom M pada lembar Stock Movements, perbaiki, lalu proses kembali.') : tr_('No errors.', 'Tidak ada kesalahan.')) +
     (r.created ? tr_('\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.',
-      '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : ''), ui.ButtonSet.OK);
+      '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : '');
+  if (web) return { success: true, result: r, message: message };
+  const ui = SpreadsheetApp.getUi();
+  ui.alert(tr_('Stock movements processed', 'Pergerakan persediaan diproses'), message, ui.ButtonSet.OK);
 }
 
 /** Pure: stock value per item and per inventory account as at a date, against the ledger. */
@@ -272,25 +274,41 @@ function stockSummaryRows_(items, rows, journalIds, asOf, ledgerByAccount) {
   return { rows: lines, total: r2_(total), balanced: !bad };
 }
 
-function generateStockSummary() {
-  const ui = SpreadsheetApp.getUi();
+function generateStockSummary(asOf, options) {
+  const web = !!(options && options.web);
+  const ui = web ? null : SpreadsheetApp.getUi();
   const today = isoDate_(new Date());
-  const res = ui.prompt(tr_('Stock summary', 'Penilaian persediaan'),
-    tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.', 'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.'), ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK) return;
-  let asOf;
-  try { asOf = parseLocalDate_(String(res.getResponseText() || today).trim()); } catch (e) { ui.alert(tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.')); return; }
+  let raw = asOf;
+  if (!web) {
+    const res = ui.prompt(tr_('Stock summary', 'Penilaian persediaan'),
+      tr_('As at which date? Enter YYYY-MM-DD, for example ' + today + '.', 'Pada tanggal berapa? Masukkan YYYY-MM-DD, misalnya ' + today + '.'), ui.ButtonSet.OK_CANCEL);
+    if (res.getSelectedButton() !== ui.Button.OK) return;
+    raw = res.getResponseText() || today;
+  }
+  raw = String(raw || today).trim();
+  const dateError = tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    if (web) throw new Error(dateError);
+    ui.alert(dateError); return;
+  }
+  let asOfDate;
+  try { asOfDate = parseLocalDate_(raw); }
+  catch (e) {
+    if (web) throw new Error(dateError);
+    ui.alert(dateError); return;
+  }
   const items = readItems_(), ledger = {};
   const invAccts = new Set(Array.from(items.values()).map(i => i.inv));
-  loadPostedForReports_().forEach(l => { if (invAccts.has(l.code) && l.date <= asOf) ledger[l.code] = (ledger[l.code] || 0) + l.debit - l.credit; });
-  const out = stockSummaryRows_(items, readMovements_(), journalIdSet_(), asOf, ledger);
+  loadPostedForReports_().forEach(l => { if (invAccts.has(l.code) && l.date <= asOfDate) ledger[l.code] = (ledger[l.code] || 0) + l.debit - l.credit; });
+  const out = stockSummaryRows_(items, readMovements_(), journalIdSet_(), asOfDate, ledger);
   writeReport_('Stock Summary', { title: (readSettings_()['Company Name'] || '') + ' - ' + tr_('Stock Summary', 'Penilaian Persediaan'),
-    subtitle: tr_('As at ' + isoDate_(asOf) + '. Moving-average cost. Processed movements only.',
-      'Pada ' + isoDate_(asOf) + '. Biaya rata-rata bergerak. Hanya pergerakan yang sudah diproses.'),
+    subtitle: tr_('As at ' + isoDate_(asOfDate) + '. Moving-average cost. Processed movements only.',
+      'Pada ' + isoDate_(asOfDate) + '. Biaya rata-rata bergerak. Hanya pergerakan yang sudah diproses.'),
     header: [tr_('Item', 'Item'), tr_('Name', 'Nama'), tr_('Unit', 'Satuan'), tr_('Quantity', 'Kuantitas'), tr_('Average cost', 'Biaya Rata-rata'),
       tr_('Stock value', 'Nilai Persediaan'), tr_('Inventory account', 'Akun Persediaan')],
     rows: out.rows, numFrom: 4, decimals: 2, widths: [110, 300, 80, 110, 120, 140, 340] });
-  ui.alert(tr_('Stock summary', 'Penilaian persediaan'),
-    tr_('Total stock value Rp ', 'Total nilai persediaan Rp ') + fmt_(out.total) + tr_('.\nLedger agreement: ', '.\nKesesuaian dengan Buku Besar: ') +
-    (out.balanced ? tr_('yes', 'ya') : tr_('NO. See the bottom of the Stock Summary sheet.', 'TIDAK. Lihat bagian bawah lembar Stock Summary.')), ui.ButtonSet.OK);
+  const message = tr_('Total stock value Rp ', 'Total nilai persediaan Rp ') + fmt_(out.total) + tr_('.\nLedger agreement: ', '.\nKesesuaian dengan Buku Besar: ') +
+    (out.balanced ? tr_('yes', 'ya') : tr_('NO. See the bottom of the Stock Summary sheet.', 'TIDAK. Lihat bagian bawah lembar Stock Summary.'));
+  if (web) return { success: true, total: out.total, balanced: out.balanced, message: message };
+  ui.alert(tr_('Stock summary', 'Penilaian persediaan'), message, ui.ButtonSet.OK);
 }

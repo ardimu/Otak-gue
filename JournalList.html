@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; background: var(--paper, #F4F6FA); color: var(--ink, #172033); }
+    .jl-shell { padding: 22px 26px 28px; }
+    .jl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .jl-kicker { color: var(--accent, #3457D5); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .jl-head h1 { margin: 5px 0 3px; font-size: 22px; line-height: 1.2; }
+    .jl-head p { margin: 0; color: var(--muted, #64748B); font-size: 12px; }
+    .jl-head a { padding: 9px 14px; border-radius: 8px; background: var(--accent, #3457D5); color: #fff; font-size: 11px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    .jl-head a:hover { filter: brightness(1.07); }
+    .jl-stats { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .jl-stat { padding: 13px 15px; background: #fff; border: 1px solid var(--rule, #E2E8F0); border-radius: 11px; }
+    .jl-stat span { display: block; color: var(--muted, #64748B); font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .jl-stat strong { display: block; margin-top: 5px; font-size: 18px; font-variant-numeric: tabular-nums; }
+    .jl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .jl-toolbar input, .jl-toolbar select { height: 34px; padding: 0 10px; border: 1px solid var(--rule, #E2E8F0); border-radius: 8px; background: #fff; color: var(--ink, #172033); font: inherit; font-size: 11px; }
+    .jl-toolbar input { min-width: 230px; }
+    .jl-toolbar button { height: 34px; padding: 0 12px; border: 1px solid var(--rule, #E2E8F0); border-radius: 8px; background: #fff; color: var(--accent, #3457D5); font-size: 11px; font-weight: 700; cursor: pointer; }
+    .jl-toolbar button:hover { background: var(--accent-soft, #EEF2FF); }
+    .jl-count { margin-left: auto; color: var(--muted, #64748B); font-size: 10px; }
+    .jl-card { overflow: hidden; background: #fff; border: 1px solid var(--rule, #E2E8F0); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .05); }
+    .jl-scroll { overflow: auto; max-height: 62vh; }
+    table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    th { position: sticky; top: 0; z-index: 1; padding: 10px 12px; background: #F8FAFC; border-bottom: 1px solid var(--rule, #E2E8F0); color: var(--muted, #64748B); font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr.jl-highlight td { background: var(--accent-soft, #EEF2FF); }
+    tr:hover td { background: #FAFBFF; }
+    .jl-id { color: var(--accent, #3457D5); font-weight: 800; }
+    .jl-sub { display: block; color: var(--muted, #64748B); font-size: 10px; }
+    .jl-status { display: inline-block; padding: 3px 8px; border-radius: 999px; background: #DCFCE7; color: #166534; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+    .jl-status.draft { background: #FEF3C7; color: #92400E; }
+    .jl-loading, .jl-empty { padding: 44px 20px; color: var(--muted, #64748B); font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="jl-shell">
+    <div class="jl-head">
+      <div>
+        <div class="jl-kicker">ACCOUNTING</div>
+        <h1><?= lang === 'ID' ? 'Daftar Jurnal' : 'Journal List' ?></h1>
+        <p><?= lang === 'ID' ? 'Semua jurnal draft dan posted, tampilan web yang rapi.' : 'All draft and posted journals in a clean web view.' ?></p>
+      </div>
+      <a href="?page=journal-new"><?= lang === 'ID' ? '+ Jurnal Baru' : '+ New Journal' ?></a>
+    </div>
+    <div class="jl-stats">
+      <div class="jl-stat"><span><?= lang === 'ID' ? 'Total jurnal' : 'Total journals' ?></span><strong id="jlTotal">0</strong></div>
+      <div class="jl-stat"><span><?= lang === 'ID' ? 'Posted' : 'Posted' ?></span><strong id="jlPosted">0</strong></div>
+      <div class="jl-stat"><span><?= lang === 'ID' ? 'Draft' : 'Drafts' ?></span><strong id="jlDraft">0</strong></div>
+      <div class="jl-stat"><span><?= lang === 'ID' ? 'Total nilai' : 'Total value' ?></span><strong id="jlValue">0</strong></div>
+    </div>
+    <div class="jl-toolbar">
+      <input type="search" id="jlSearch" placeholder="<?= lang === 'ID' ? 'Cari ID, keterangan, referensi, pihak…' : 'Search ID, description, reference, party…' ?>">
+      <select id="jlStatus">
+        <option value="ALL"><?= lang === 'ID' ? 'Semua status' : 'All statuses' ?></option>
+        <option value="POSTED">POSTED</option>
+        <option value="DRAFT">DRAFT</option>
+      </select>
+      <button type="button" id="jlRefresh"><?= lang === 'ID' ? 'Muat ulang' : 'Refresh' ?></button>
+      <span class="jl-count" id="jlCount"></span>
+    </div>
+    <div class="jl-card">
+      <div class="jl-scroll" id="jlBody"><div class="jl-loading"><?= lang === 'ID' ? 'Memuat jurnal…' : 'Loading journals…' ?></div></div>
+    </div>
+  </div>
+
+  <script>
+    const LAN = <?!= JSON.stringify(lang) ?>;
+    const HIGHLIGHT = <?!= JSON.stringify(String(typeof params === 'undefined' ? '' : (params.highlight || ''))) ?>;
+    const $ = id => document.getElementById(id);
+    let ITEMS = [];
+
+    function esc(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function money(value) {
+      return (Number(value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function fail(error) {
+      $('jlBody').innerHTML = '<div class="jl-empty">' + esc((error && error.message) || error || 'Error') + '</div>';
+    }
+    function load() {
+      $('jlBody').innerHTML = '<div class="jl-loading">' + (LAN === 'ID' ? 'Memuat jurnal…' : 'Loading journals…') + '</div>';
+      google.script.run
+        .withSuccessHandler(result => {
+          if (!result || !result.success) { fail(result && result.message ? result.message : 'No data'); return; }
+          ITEMS = result.journals || [];
+          renderStats();
+          renderTable();
+        })
+        .withFailureHandler(fail)
+        .webListJournals({ status: 'ALL', limit: 500 });
+    }
+    function renderStats() {
+      const posted = ITEMS.filter(item => item.status === 'POSTED');
+      const drafts = ITEMS.filter(item => item.status === 'DRAFT');
+      $('jlTotal').textContent = ITEMS.length;
+      $('jlPosted').textContent = posted.length;
+      $('jlDraft').textContent = drafts.length;
+      $('jlValue').textContent = money(ITEMS.reduce((sum, item) => sum + (Number(item.debit) || 0), 0));
+    }
+    function visibleItems() {
+      const term = $('jlSearch').value.trim().toLowerCase();
+      const status = $('jlStatus').value;
+      return ITEMS.filter(item => {
+        if (status !== 'ALL' && item.status !== status) return false;
+        if (!term) return true;
+        return [item.journalId, item.journalType, item.description, item.reference, item.party]
+          .some(value => String(value || '').toLowerCase().indexOf(term) >= 0);
+      });
+    }
+    function renderTable() {
+      const items = visibleItems();
+      $('jlCount').textContent = items.length + ' / ' + ITEMS.length;
+      if (!items.length) {
+        $('jlBody').innerHTML = '<div class="jl-empty">' + (LAN === 'ID' ? 'Belum ada jurnal yang cocok.' : 'No matching journals.') + '</div>';
+        return;
+      }
+      let html = '<table><thead><tr><th>' + (LAN === 'ID' ? 'ID & Jenis' : 'ID & Type') + '</th><th>' +
+        (LAN === 'ID' ? 'Tanggal' : 'Date') + '</th><th>' + (LAN === 'ID' ? 'Keterangan' : 'Description') + '</th><th>' +
+        (LAN === 'ID' ? 'Pihak' : 'Party') + '</th><th>' + (LAN === 'ID' ? 'Status' : 'Status') + '</th><th>' +
+        (LAN === 'ID' ? 'Debit' : 'Debit') + '</th><th>' + (LAN === 'ID' ? 'Kredit' : 'Credit') + '</th><th>' +
+        (LAN === 'ID' ? 'Baris' : 'Lines') + '</th></tr></thead><tbody>';
+      items.forEach(item => {
+        html += '<tr' + (item.journalId === HIGHLIGHT ? ' class="jl-highlight"' : '') + '>' +
+          '<td><span class="jl-id">' + esc(item.journalId) + '</span><span class="jl-sub">' + esc(item.journalType) + '</span></td>' +
+          '<td>' + esc(item.date) + '<span class="jl-sub">' + esc(item.postedAt || item.updatedAt) + '</span></td>' +
+          '<td>' + esc(item.description) + (item.reference ? '<span class="jl-sub">' + esc(item.reference) + '</span>' : '') + '</td>' +
+          '<td>' + esc(item.party) + '</td>' +
+          '<td><span class="jl-status' + (item.status === 'DRAFT' ? ' draft' : '') + '">' + esc(item.status) + '</span></td>' +
+          '<td class="num">' + money(item.debit) + '</td>' +
+          '<td class="num">' + money(item.credit) + '</td>' +
+          '<td class="num">' + esc(item.lineCount) + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      $('jlBody').innerHTML = html;
+    }
+    $('jlSearch').addEventListener('input', renderTable);
+    $('jlStatus').addEventListener('change', renderTable);
+    $('jlRefresh').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

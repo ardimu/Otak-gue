@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; background: var(--paper, #F4F6FA); color: var(--ink, #172033); }
+    .rv-shell { padding: 22px 26px 28px; }
+    .rv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .rv-kicker { color: var(--accent, #3457D5); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .rv-head h1 { margin: 5px 0 3px; font-size: 22px; line-height: 1.2; }
+    .rv-head p { margin: 0; color: var(--muted, #64748B); font-size: 12px; }
+    .rv-actions { display: flex; align-items: center; gap: 10px; }
+    .rv-actions a { padding: 8px 12px; border: 1px solid var(--rule, #E2E8F0); border-radius: 8px; background: #fff; color: var(--accent, #3457D5); font-size: 11px; font-weight: 700; text-decoration: none; }
+    .rv-actions a:hover { background: var(--accent-soft, #EEF2FF); }
+    .rv-stamp { color: var(--muted, #64748B); font-size: 10px; }
+    .rv-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+    .rv-tab { padding: 8px 13px; border: 1px solid var(--rule, #E2E8F0); border-radius: 999px; background: #fff; color: var(--muted, #64748B); font-size: 11px; font-weight: 700; cursor: pointer; }
+    .rv-tab.active { border-color: var(--accent, #3457D5); background: var(--accent, #3457D5); color: #fff; }
+    .rv-card { overflow: hidden; background: #fff; border: 1px solid var(--rule, #E2E8F0); border-radius: 12px; box-shadow: 0 8px 24px rgba(15, 23, 42, .05); }
+    .rv-scroll { overflow: auto; max-height: 62vh; }
+    .rv-report { padding: 18px 20px 22px; }
+    .rv-report h2 { margin: 0 0 3px; font-size: 16px; }
+    .rv-report .rv-sub { margin: 0 0 14px; color: var(--muted, #64748B); font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    th { position: sticky; top: 0; z-index: 1; padding: 9px 10px; background: #F8FAFC; border-bottom: 1px solid var(--rule, #E2E8F0); color: var(--muted, #64748B); font-size: 9.5px; font-weight: 800; letter-spacing: .07em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 7px 10px; border-bottom: 1px solid #F1F5F9; vertical-align: top; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    tr.rv-h td { background: #F8FAFC; color: var(--accent, #3457D5); font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+    tr.rv-s td { font-weight: 700; }
+    tr.rv-t td { background: var(--accent-soft, #EEF2FF); font-weight: 800; }
+    tr.rv-n td { color: var(--muted, #64748B); font-style: italic; }
+    tr.rv-x td { color: #B45309; font-weight: 700; }
+    .rv-warn { margin-bottom: 12px; padding: 10px 14px; border: 1px solid #FDE68A; border-radius: 9px; background: #FFFBEB; color: #92400E; font-size: 11px; }
+    .rv-loading, .rv-empty { padding: 44px 20px; color: var(--muted, #64748B); font-size: 12px; text-align: center; }
+    .rv-foot { margin-top: 12px; color: var(--muted, #64748B); font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div class="rv-shell">
+    <div class="rv-head">
+      <div>
+        <div class="rv-kicker">FINANCIAL REPORT</div>
+        <h1><?= lang === 'ID' ? 'Laporan Keuangan' : 'Financial Reports' ?></h1>
+        <p id="rvMeta"></p>
+      </div>
+      <div class="rv-actions">
+        <span class="rv-stamp" id="rvStamp"></span>
+        <a href="?page=reports-monthly"><?= lang === 'ID' ? 'Buat ulang' : 'Regenerate' ?></a>
+      </div>
+    </div>
+    <div class="rv-warn" id="rvWarn" hidden></div>
+    <div class="rv-tabs" id="rvTabs"></div>
+    <div class="rv-card" id="rvCard"><div class="rv-loading"><?= lang === 'ID' ? 'Menghitung laporan…' : 'Calculating reports…' ?></div></div>
+    <div class="rv-foot"><?= lang === 'ID' ? 'Dihitung langsung dari jurnal posted. Tidak ada sheet yang diubah.' : 'Calculated directly from posted journals. No spreadsheet sheet is changed.' ?></div>
+  </div>
+
+  <script>
+    const LAN = <?!= JSON.stringify(lang) ?>;
+    const PERIOD = <?!= JSON.stringify(period || '') ?>;
+    const KEYS = <?!= JSON.stringify(String(typeof params === 'undefined' ? '' : (params.keys || '')).split(',').filter(Boolean)) ?>;
+    const $ = id => document.getElementById(id);
+    const LABELS = LAN === 'ID'
+      ? { tb: 'Neraca Saldo', gl: 'Buku Besar', is: 'Laba Rugi', bs: 'Neraca', eq: 'Perubahan Ekuitas', cf: 'Arus Kas' }
+      : { tb: 'Trial Balance', gl: 'General Ledger', is: 'Income Statement', bs: 'Balance Sheet', eq: 'Equity Changes', cf: 'Cash Flow' };
+    let DATA = null, ACTIVE = '';
+
+    function esc(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function fmt(value, report) {
+      if (value === null || value === undefined || value === '') return '';
+      if (typeof value === 'number') {
+        const digits = Number(report.decimals) || 0;
+        return value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: Math.max(digits, 2) });
+      }
+      return esc(value);
+    }
+    function fail(error) {
+      $('rvCard').innerHTML = '<div class="rv-empty">' + esc((error && error.message) || error || 'Error') + '</div>';
+    }
+    function load() {
+      const payload = {
+        period: PERIOD,
+        mode: KEYS.length ? 'custom' : 'all',
+        reports: KEYS,
+        web: true
+      };
+      google.script.run
+        .withSuccessHandler(result => {
+          if (!result || !result.success) { fail(result && result.message ? result.message : 'No report data'); return; }
+          DATA = result;
+          render();
+        })
+        .withFailureHandler(fail)
+        .webGetReportData(payload);
+    }
+    function render() {
+      $('rvMeta').textContent = DATA.period + ' · ' + (LAN === 'ID' ? 'Pratinjau web' : 'Web preview');
+      $('rvStamp').textContent = (DATA.generatedAt || '').replace('T', ' ').slice(0, 16) + ' UTC';
+      const warnings = DATA.warnings || [];
+      $('rvWarn').hidden = !warnings.length;
+      $('rvWarn').innerHTML = warnings.map(w => esc(w)).join('<br>');
+      $('rvTabs').innerHTML = DATA.keys.map(key =>
+        '<button type="button" class="rv-tab" data-key="' + esc(key) + '">' + esc(LABELS[key] || key) + '</button>'
+      ).join('');
+      $('rvTabs').querySelectorAll('.rv-tab').forEach(tab => {
+        tab.addEventListener('click', () => show(tab.getAttribute('data-key')));
+      });
+      show(DATA.keys[0] || '');
+    }
+    function show(key) {
+      if (!key || !DATA.reports[key]) return;
+      ACTIVE = key;
+      $('rvTabs').querySelectorAll('.rv-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.getAttribute('data-key') === key);
+      });
+      const report = DATA.reports[key];
+      let html = '<div class="rv-report"><h2>' + esc(report.title || LABELS[key]) + '</h2>' +
+        '<p class="rv-sub">' + esc(report.subtitle || '') + '</p><div class="rv-scroll"><table><thead><tr>' +
+        (report.header || []).map(cell => '<th>' + esc(cell) + '</th>').join('') + '</tr></thead><tbody>';
+      (report.rows || []).forEach(row => {
+        html += '<tr class="rv-' + esc(row.k || 'l') + '">' + (row.c || []).map((cell, index) => {
+          const cls = typeof report.numFrom === 'number' && index >= report.numFrom ? ' class="num"' : '';
+          return '<td' + cls + '>' + fmt(cell, report) + '</td>';
+        }).join('') + '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+      $('rvCard').innerHTML = html;
+    }
+    load();
+  </script>
+</body>
+</html>

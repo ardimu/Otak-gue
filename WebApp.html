@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?!= include('WebTheme'); ?>
+</head>
+<body class="web-app">
+  <header class="web-top">
+    <div class="web-top-row">
+      <div class="web-brand">
+        <div class="web-logo">A</div>
+        <div class="web-brand-text">
+          <strong>ACCOUNTING</strong>
+          <span>FINANCE OPS</span>
+        </div>
+      </div>
+      <span class="web-company"><?= company ?></span>
+      <div class="web-search"><?= lang === 'ID' ? 'Cari menu, akun, atau transaksi…' : 'Search menus, accounts, or transactions…' ?></div>
+      <div class="web-top-actions">
+        <span class="web-mode"><?= mode ?></span>
+        <div class="web-lang">
+          <button type="button" class="<?= lang === 'EN' ? 'active' : '' ?>" onclick="webSetLang('EN')">EN</button>
+          <button type="button" class="<?= lang === 'ID' ? 'active' : '' ?>" onclick="webSetLang('ID')">ID</button>
+        </div>
+        <span class="web-avatar">AC</span>
+      </div>
+    </div>
+    <nav class="web-menubar"><?!= nav ?></nav>
+  </header>
+  <div class="web-accent"></div>
+  <main class="web-main">
+    <iframe id="webFrame" title="Dashboard" src="<?= frameSrc ?>"></iframe>
+  </main>
+
+  <div class="web-modal" id="webModal" hidden>
+    <div class="web-modal-backdrop"></div>
+    <div class="web-modal-card">
+      <div class="web-modal-head">
+        <strong id="webModalTitle"></strong>
+        <button type="button" class="web-modal-close" title="Close">×</button>
+      </div>
+      <iframe id="webModalFrame" title="Dialog"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const WEB_BASE = <?!= JSON.stringify(baseUrl) ?>;
+    const INITIAL_PAGE = <?!= JSON.stringify(page) ?>;
+    const INITIAL_TITLE = <?!= JSON.stringify(title) ?>;
+
+    function webPageUrl(key, raw, extra) {
+      const suffix = extra ? '&' + String(extra).replace(/^[?&]+/, '') : '';
+      return WEB_BASE + '?page=' + encodeURIComponent(key) + suffix + (raw ? '&raw=1' : '');
+    }
+    function closeMenus() {
+      document.querySelectorAll('.web-menu-toggle').forEach(function (toggle) { toggle.checked = false; });
+    }
+    function webOpenModal(key, label, extra) {
+      key = String(key || '');
+      if (!key || key === 'home') { webCloseModal(); return; }
+      const modal = document.getElementById('webModal');
+      const frame = document.getElementById('webModalFrame');
+      document.getElementById('webModalTitle').textContent = label || INITIAL_TITLE || key;
+      const src = webPageUrl(key, true, extra);
+      if (frame.getAttribute('src') !== src) frame.src = src;
+      modal.hidden = false;
+      closeMenus();
+      try { window.history.replaceState(null, '', webPageUrl(key, false, extra)); } catch (e) {}
+    }
+    function webCloseModal() {
+      const modal = document.getElementById('webModal');
+      const frame = document.getElementById('webModalFrame');
+      modal.hidden = true;
+      frame.src = 'about:blank';
+      try { window.history.replaceState(null, '', webPageUrl('home', false)); } catch (e) {}
+    }
+    function webSetLang(lang) {
+      google.script.run
+        .withSuccessHandler(function () { window.top.location.href = webPageUrl('home', false); })
+        .webSetLanguage(lang);
+    }
+    document.querySelectorAll('.web-menu-toggle').forEach(function (toggle) {
+      toggle.addEventListener('change', function () {
+        if (!toggle.checked) return;
+        document.querySelectorAll('.web-menu-toggle').forEach(function (other) {
+          if (other !== toggle) other.checked = false;
+        });
+      });
+    });
+    document.addEventListener('click', function (event) {
+      const target = event.target;
+      const modalLink = target.closest && target.closest('a[data-modal]');
+      if (modalLink) {
+        event.preventDefault();
+        webOpenModal(modalLink.getAttribute('data-page'), modalLink.getAttribute('data-label'), modalLink.getAttribute('data-extra'));
+        return;
+      }
+      const homeLink = target.closest && target.closest('a[data-home]');
+      if (homeLink) {
+        event.preventDefault();
+        webCloseModal();
+        return;
+      }
+      if (target.closest && target.closest('.web-modal-close, .web-modal-backdrop')) {
+        webCloseModal();
+        return;
+      }
+      if (target.closest && !target.closest('.web-menu')) closeMenus();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') { webCloseModal(); closeMenus(); }
+    });
+    if (INITIAL_PAGE && INITIAL_PAGE !== 'home') webOpenModal(INITIAL_PAGE, INITIAL_TITLE);
+  </script>
+</body>
+</html>

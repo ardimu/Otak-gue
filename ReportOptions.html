@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --paper: #eef2ec; --sheet: #fff; --ink: #1d2a25; --muted: #5d6b65; --rule: #d2dcd1; --accent: #1f5c46; --danger: #a8322a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px; background: var(--paper); color: var(--ink); font: 13px/1.45 "Segoe UI", Arial, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 14px; }
+  section { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; padding: 14px 16px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  input[type="month"], select { width: 100%; padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; font: inherit; color: var(--ink); background: #fff; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { border: 1px solid transparent; border-radius: 3px; padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer; }
+  .primary { background: var(--accent); color: #fff; }
+  .quiet { background: #fff; border-color: #9fb0a4; color: var(--ink); }
+  .link { background: transparent; border-color: transparent; color: var(--accent); padding: 2px 6px; }
+  .choices { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+  .check { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 0; font-weight: 400; cursor: pointer; }
+  .check input { margin: 0; }
+  .check.disabled { color: var(--muted); cursor: default; }
+  .tools { display: flex; gap: 8px; margin-top: 8px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .hidden { display: none !important; }
+  #message { white-space: pre-wrap; margin-top: 10px; min-height: 18px; color: var(--danger); }
+</style>
+</head>
+<body>
+  <h1>Generate monthly reports</h1>
+  <p class="sub">Choose the month and the reports you want. Only the selected sheets are written and shown.</p>
+
+  <section>
+    <label for="period">Month</label>
+    <input type="month" id="period">
+
+    <label for="mode" style="margin-top:12px">Report selection</label>
+    <select id="mode">
+      <option value="all">All financial reports</option>
+      <option value="custom">Choose reports (checkboxes)</option>
+    </select>
+
+    <div class="choices hidden" id="choices">
+      <label class="check"><input type="checkbox" class="report-check" value="tb"> Trial Balance</label>
+      <label class="check"><input type="checkbox" class="report-check" value="gl"> General Ledger</label>
+      <label class="check"><input type="checkbox" class="report-check" value="is"> Income Statement</label>
+      <label class="check"><input type="checkbox" class="report-check" value="bs"> Balance Sheet</label>
+      <label class="check"><input type="checkbox" class="report-check" value="eq"> Statement of Changes in Equity</label>
+      <label class="check"><input type="checkbox" class="report-check" value="cf"> Cash Flow Statement</label>
+      <div class="tools">
+        <button type="button" class="link" id="btnAll">Select all</button>
+        <button type="button" class="link" id="btnNone">Clear</button>
+      </div>
+    </div>
+
+    <div id="message" role="status" aria-live="polite"></div>
+    <div class="actions">
+      <button type="button" class="quiet" id="btnCancel">Cancel</button>
+      <button type="button" class="primary" id="btnRun">Generate</button>
+    </div>
+  </section>
+
+  <script>
+    const initial = <?!= JSON.stringify(initial) ?>;
+    const WEB_MODE = <?!= JSON.stringify(typeof webMode === 'undefined' ? false : webMode) ?>;
+    const $ = id => document.getElementById(id);
+    const boxes = () => Array.from(document.querySelectorAll('.report-check'));
+
+    function say(text) { $('message').textContent = text || ''; }
+
+    function applyMode() {
+      const custom = $('mode').value === 'custom';
+      $('choices').classList.toggle('hidden', !custom);
+      boxes().forEach(box => {
+        box.disabled = !custom;
+        box.parentNode.classList.toggle('disabled', !custom);
+      });
+    }
+
+    $('btnAll').addEventListener('click', () => boxes().forEach(box => { box.checked = true; }));
+    $('btnNone').addEventListener('click', () => boxes().forEach(box => { box.checked = false; }));
+    $('mode').addEventListener('change', applyMode);
+    $('btnCancel').addEventListener('click', () => google.script.host.close());
+
+    $('btnRun').addEventListener('click', () => {
+      say('');
+      const period = $('period').value;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { say('Choose the month first.'); return; }
+      const mode = $('mode').value;
+      const reports = boxes().filter(box => box.checked).map(box => box.value);
+      if (mode === 'custom' && !reports.length) { say('Choose at least one report.'); return; }
+      $('btnRun').disabled = true;
+      if (WEB_MODE) {
+        google.script.run
+          .withSuccessHandler(result => {
+            $('btnRun').disabled = false;
+            if (!result || !result.success) { say(result && result.message ? result.message : 'Unable to build reports.'); return; }
+            const query = 'period=' + encodeURIComponent(period) + '&keys=' + encodeURIComponent(result.keys.join(','));
+            if (window.webGoPage) window.webGoPage('reports-view', 'Financial Reports', query);
+            else window.location.href = '?page=reports-view&' + query;
+          })
+          .withFailureHandler(error => {
+            $('btnRun').disabled = false;
+            say(error && error.message ? error.message : String(error));
+          })
+          .webGetReportData({ period: period, mode: mode, reports: reports, web: true });
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(() => google.script.host.close())
+        .withFailureHandler(error => {
+          $('btnRun').disabled = false;
+          say(error && error.message ? error.message : String(error));
+        })
+        .generateReportSelection({ period: period, mode: mode, reports: reports, web: false });
+    });
+
+    $('period').value = initial.period;
+    $('mode').value = initial.mode;
+    boxes().forEach(box => { box.checked = initial.reports.indexOf(box.value) >= 0; });
+    applyMode();
+  </script>
+</body>
+</html>

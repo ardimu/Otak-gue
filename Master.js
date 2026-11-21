@@ -7,7 +7,7 @@
  */
 
 const MASTER = { PARTIES: 'Parties', TAX_RATES: 'Tax Rates', TER: 'PPh21 TER', BRACKETS: 'Tax Brackets' };
-const PARTY_HEADERS = ['Party ID', 'Name', 'Type', 'Tax ID (NPWP/NIK)', 'Address', 'Payment Terms (days)', 'Status'];
+const PARTY_HEADERS = ['Party ID', 'Name', 'Type', 'Tax ID (NPWP/NIK)', 'Address', 'Payment Terms (days)', 'Status', 'Phone'];
 const TAX_RATE_HEADERS = ['Tax', 'Code', 'Object', 'Method', 'Rate (%)', 'Base Factor',
   'No-NPWP Multiplier', 'Add-on', 'Bracket', 'Notes', 'Status'];
 const TER_HEADERS = ['Category', 'Above', 'Up To', 'Rate (%)'];
@@ -102,17 +102,29 @@ function installMasterData_(ss, log) {
     widths.forEach((w, i) => sh.setColumnWidth(i + 1, w));
     log.push(`Created sheet "${name}"${rows.length ? ` with ${rows.length} rows` : ''}.`);
   };
-  make(MASTER.PARTIES, PARTY_HEADERS, [], [100, 260, 100, 170, 300, 150, 90]);
+  make(MASTER.PARTIES, PARTY_HEADERS, [], [100, 260, 100, 170, 300, 150, 90, 150]);
   make(MASTER.TAX_RATES, TAX_RATE_HEADERS, TAX_RATE_SEED, [80, 150, 380, 90, 80, 90, 140, 70, 160, 520, 80]);
   make(MASTER.TER, TER_HEADERS, terRows_(), [90, 130, 130, 90]);
   make(MASTER.BRACKETS, BRACKET_HEADERS, BRACKET_SEED, [170, 130, 130, 90]);
   const parties = ss.getSheetByName(MASTER.PARTIES);
-  if (parties && parties.getLastRow() <= 1) {
-    parties.getRange(2, 3, 500, 1).setDataValidation(
-      SpreadsheetApp.newDataValidation().requireValueInList(['Customer', 'Supplier', 'Both'], true).build());
-    parties.getRange(2, 7, 500, 1).setDataValidation(
-      SpreadsheetApp.newDataValidation().requireValueInList(['Active', 'Inactive'], true).build());
+  if (parties) {
+    ensurePartyHeaders_(parties);
+    if (parties.getLastRow() <= 1) {
+      parties.getRange(2, 3, 500, 1).setDataValidation(
+        SpreadsheetApp.newDataValidation().requireValueInList(['Customer', 'Supplier', 'Both'], true).build());
+      parties.getRange(2, 7, 500, 1).setDataValidation(
+        SpreadsheetApp.newDataValidation().requireValueInList(['Active', 'Inactive'], true).build());
+    }
   }
+}
+
+function ensurePartyHeaders_(sheet) {
+  const width = Math.max(sheet.getLastColumn(), PARTY_HEADERS.length);
+  const current = sheet.getRange(1, 1, 1, width).getDisplayValues()[0];
+  PARTY_HEADERS.forEach((header, i) => {
+    if (!String(current[i] || '').trim()) sheet.getRange(1, i + 1).setValue(header);
+  });
+  sheet.setColumnWidth(PARTY_HEADERS.length, 150);
 }
 
 function readSheetValues_(name) {
@@ -125,13 +137,13 @@ function readSheetValues_(name) {
 function readParties_() {
   return readSheetValues_(MASTER.PARTIES).filter(r => String(r[0]).trim() && String(r[1]).trim()).map(r => ({
     id: String(r[0]).trim(), name: String(r[1]).trim(), type: String(r[2]).trim() || 'Both',
-    taxId: String(r[3]).trim(), terms: Number(r[5]) || 0,
-    active: String(r[6]).trim().toLowerCase() !== 'inactive'
+    taxId: String(r[3]).trim(), address: String(r[4]).trim(), terms: Number(r[5]) || 0,
+    active: String(r[6]).trim().toLowerCase() !== 'inactive', phone: String(r[7] || '').trim()
   }));
 }
 
 function getActiveParties_() {
-  return readParties_().filter(p => p.active).map(p => ({ id: p.id, name: p.name, type: p.type, terms: p.terms }));
+  return readParties_().filter(p => p.active).map(p => ({ id: p.id, name: p.name, type: p.type, terms: p.terms, phone: p.phone }));
 }
 
 /** Rates, TER rows and tiers for the journal form. Primitives only. */
@@ -158,30 +170,136 @@ function getTaxConfig_() {
   return { objects: objects, ter: ter, brackets: brackets };
 }
 
+function showPartiesManager() {
+  const indonesian = getLanguage() === 'ID';
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutputFromFile(indonesian ? 'PartiesManagerId' : 'PartiesManager').setWidth(940).setHeight(640),
+    indonesian ? 'Kelola Pihak' : 'Parties (Customer or Supplier)'
+  );
+}
+
+function nextPartyId_(all, type) {
+  const prefix = type === 'Customer' ? 'CUS' : (type === 'Supplier' ? 'SUP' : 'BTH');
+  const re = new RegExp('^' + prefix + '-(\\d+)$');
+  let seq = 0;
+  all.forEach(p => { const m = re.exec(p.id); if (m) seq = Math.max(seq, Number(m[1])); });
+  return prefix + '-' + String(seq + 1).padStart(4, '0');
+}
+
+function partyFormData_(payload, all, excludeId) {
+  const name = String(payload && payload.name || '').trim();
+  if (!name) throw new Error('Enter the name.');
+  const type = ['Customer', 'Supplier', 'Both'].includes(payload && payload.type) ? payload.type : 'Both';
+  const terms = Number(payload && payload.terms) || 0;
+  if (all.some(p => p.name.toLowerCase() === name.toLowerCase() && p.id !== excludeId)) {
+    throw new Error(`"${name}" already exists in the Parties sheet.`);
+  }
+  return {
+    name: name, type: type, terms: terms,
+    taxId: String(payload && payload.taxId || '').trim(),
+    address: String(payload && payload.address || '').trim(),
+    phone: String(payload && payload.phone || '').trim(),
+    active: payload && payload.active === false ? false : true
+  };
+}
+
+function partyRowNumber_(sheet, id) {
+  const last = Math.max(sheet.getLastRow(), 1);
+  if (last < 2 || !id) return -1;
+  const values = sheet.getRange(2, 1, last - 1, 1).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === id) return i + 2;
+  }
+  return -1;
+}
+
+function partyIsReferenced_(party) {
+  if (!party) return false;
+  const journal = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.JOURNAL);
+  if (!journal || journal.getLastRow() < 2) return false;
+  const name = party.name.toLowerCase();
+  return [COL.party, COL.partyId].some(index => {
+    const values = journal.getRange(2, index + 1, journal.getLastRow() - 1, 1).getDisplayValues();
+    return values.some(r => {
+      const value = String(r[0]).trim();
+      return value === party.id || value.toLowerCase() === name;
+    });
+  });
+}
+
+function getPartiesForManager() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(MASTER.PARTIES);
+  if (!sheet) return [];
+  ensurePartyHeaders_(sheet);
+  return readParties_().map(p => ({
+    id: p.id, name: p.name, type: p.type, taxId: p.taxId, address: p.address,
+    phone: p.phone, terms: p.terms, active: p.active
+  }));
+}
+
 /** Quick add from the journal form. Names must be unique. */
 function addParty(payload) {
   const lock = LockService.getDocumentLock();
   if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
-    const name = String(payload && payload.name || '').trim();
-    const type = ['Customer', 'Supplier', 'Both'].includes(payload && payload.type) ? payload.type : 'Both';
-    if (!name) throw new Error('Enter the name.');
     const sheet = getRequiredSheet_(MASTER.PARTIES);
+    ensurePartyHeaders_(sheet);
     const all = readParties_();
-    if (all.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error(`"${name}" already exists in the Parties sheet.`);
-    }
-    const prefix = type === 'Customer' ? 'CUS' : (type === 'Supplier' ? 'SUP' : 'BTH');
-    const re = new RegExp('^' + prefix + '-(\\d+)$');
-    let seq = 0;
-    all.forEach(p => { const m = re.exec(p.id); if (m) seq = Math.max(seq, Number(m[1])); });
-    const id = prefix + '-' + String(seq + 1).padStart(4, '0');
-    const terms = Number(payload.terms) || 0;
+    const data = partyFormData_(payload, all, '');
+    const id = nextPartyId_(all, data.type);
     const row = Math.max(sheet.getLastRow() + 1, 2);
-    sheet.getRange(row, 1, 1, PARTY_HEADERS.length)
-      .setValues([[id, name, type, String(payload.taxId || '').trim(), '', terms, 'Active']]);
+    sheet.getRange(row, 1, 1, PARTY_HEADERS.length).setValues([[
+      id, data.name, data.type, data.taxId, data.address, data.terms, 'Active', data.phone
+    ]]);
     SpreadsheetApp.flush();
-    return { id: id, name: name, type: type, terms: terms };
+    return { id: id, name: data.name, type: data.type, terms: data.terms, phone: data.phone };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveParty(payload) {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
+  try {
+    const sheet = getRequiredSheet_(MASTER.PARTIES);
+    ensurePartyHeaders_(sheet);
+    const all = readParties_();
+    const id = String(payload && payload.id || '').trim();
+    const row = partyRowNumber_(sheet, id);
+    if (id && row < 0) throw new Error('Party was not found.');
+    const data = partyFormData_(payload, all, id);
+    const partyId = id || nextPartyId_(all, data.type);
+    sheet.getRange(row >= 0 ? row : Math.max(sheet.getLastRow() + 1, 2), 1, 1, PARTY_HEADERS.length).setValues([[
+      partyId, data.name, data.type, data.taxId, data.address, data.terms,
+      data.active ? 'Active' : 'Inactive', data.phone
+    ]]);
+    SpreadsheetApp.flush();
+    return { id: partyId, name: data.name, type: data.type, terms: data.terms, phone: data.phone, active: data.active,
+      message: tr_('Party saved.', 'Pihak tersimpan.') };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteParty(id) {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
+  try {
+    const partyId = String(id == null ? '' : id).trim();
+    if (!partyId) throw new Error('Choose a party.');
+    const sheet = getRequiredSheet_(MASTER.PARTIES);
+    ensurePartyHeaders_(sheet);
+    const row = partyRowNumber_(sheet, partyId);
+    if (row < 0) throw new Error('Party was not found.');
+    const party = readParties_().find(p => p.id === partyId);
+    if (partyIsReferenced_(party)) {
+      sheet.getRange(row, 7).setValue('Inactive');
+      return { success: true, deactivated: true,
+        message: tr_('Party is used in journals and has been set to Inactive.', 'Pihak digunakan dalam jurnal dan telah dinonaktifkan.') };
+    }
+    sheet.deleteRow(row);
+    return { success: true, deactivated: false, message: tr_('Party deleted.', 'Pihak dihapus.') };
   } finally {
     lock.releaseLock();
   }

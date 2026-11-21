@@ -366,6 +366,7 @@
       <div class="field"><label for="pTerms">Payment terms (days)</label><input id="pTerms" type="number" min="0" value="0"></div>
     </div>
     <div class="field" style="margin-top:10px"><label for="pTax">NPWP or NIK (optional)</label><input id="pTax"></div>
+    <div class="field" style="margin-top:10px"><label for="pPhone">Phone number (optional)</label><input id="pPhone"></div>
     <div id="pMsg" class="warn"></div>
     <div class="row"><button class="quiet" id="pCancel" type="button">Cancel</button><button class="primary" id="pSave" type="button">Save</button></div>
   </div>
@@ -374,6 +375,7 @@
 <script>
 const INITIAL_DRAFT_ID = <?!= JSON.stringify(draftId || '') ?>;
 const APP_MODE = <?!= JSON.stringify(typeof appMode === 'undefined' ? 'PRACTICE' : appMode) ?>;
+const WEB_MODE = <?!= JSON.stringify(typeof webMode === 'undefined' ? false : webMode) ?>;
 let currentDraftId = INITIAL_DRAFT_ID || '';
 let CFG = null, accounts = [], parties = [], TAX = { objects: [], ter: [], brackets: {} }, TPL = {}, tpl = null;
 let linesEdited = false, typeTouched = false, baseAuto = true, whtAccAuto = true;
@@ -1054,7 +1056,7 @@ function updateDue() {
 function openPartyDialog() {
   $('pName').value = $('party').value.trim();
   $('pType').value = tpl && tpl.party && /customer/i.test(tpl.party) ? 'Customer' : (tpl && /supplier/i.test(tpl.party || '') ? 'Supplier' : 'Both');
-  $('pTerms').value = 0; $('pTax').value = ''; $('pMsg').textContent = '';
+  $('pTerms').value = 0; $('pTax').value = ''; $('pPhone').value = ''; $('pMsg').textContent = '';
   $('partyOverlay').classList.remove('hidden'); $('pName').focus();
 }
 function saveParty() {
@@ -1066,7 +1068,7 @@ function saveParty() {
       $('partyOverlay').classList.add('hidden');
     })
     .withFailureHandler(e => { $('pSave').disabled = false; $('pMsg').textContent = e.message || String(e); })
-    .addParty({ name: $('pName').value, type: $('pType').value, terms: $('pTerms').value, taxId: $('pTax').value });
+    .addParty({ name: $('pName').value, type: $('pType').value, terms: $('pTerms').value, taxId: $('pTax').value, phone: $('pPhone').value });
 }
 
 /* ---------- Draft: collect and restore ---------- */
@@ -1202,6 +1204,10 @@ function saveNow(payload, isPost) {
   setButtons(true); setMessage(isPost ? 'Posting...' : 'Saving the draft...', '');
   google.script.run
     .withSuccessHandler(r => {
+      if (WEB_MODE && window.webGoPage) {
+        window.webGoPage('journals', 'Journal List', 'highlight=' + encodeURIComponent(r.journalId || ''));
+        return;
+      }
       openDialog(isPost ? 'Journal posted' : 'Draft saved',
         'Journal ID: ' + r.journalId + '\nStatus: ' + r.status + '\nCreated by: ' + r.createdBy +
         (r.postedBy ? '\nPosted by: ' + r.postedBy : '') + '\nTotal: Rp ' + money(r.debit),

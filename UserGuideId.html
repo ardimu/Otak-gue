@@ -96,6 +96,7 @@
         <li>Kata dalam <strong>tebal</strong> adalah label antarmuka. Kata dalam <code>code</code> adalah nama menu, nama lembar, nama kolom, atau nilai sistem.</li>
         <li>Panduan ini tidak pernah mengubah data. Panduan ini hanya berfungsi sebagai referensi.</li>
       </ul>
+      <div class="callout info"><strong>Aplikasi web.</strong> Menu dan isi yang sama tersedia pada Web App Apps Script. Buka URL hasil deployment, masuk dengan akun Google, lalu gunakan menu atas dengan dropdown untuk berpindah halaman. Untuk membatasi akses, isi <code>WEB_ALLOWED_EMAILS</code> pada Script Properties dengan daftar alamat email yang dipisahkan koma.</div>
       <div class="callout good"><strong>Konvensi membaca</strong> Draf bukan data perusahaan saat ini. Jurnal yang telah diposting bersifat final dan memengaruhi laporan. Pembedaan ini merupakan kunci penggunaan sistem yang aman.</div>
     </section>
 
@@ -143,7 +144,7 @@
         <tr><td>Jatuh Tempo</td><td>Tanggal pembayaran atau penyelesaian untuk AR dan AP.</td><td>Digunakan oleh laporan umur. Nilainya diperbarui otomatis pada mode terbantu kecuali Anda mengubahnya.</td></tr>
         <tr><td>Referensi</td><td>Nomor faktur, nomor kontrak, atau referensi bank.</td><td>Membantu menelusuri jurnal ke dokumen sumbernya.</td></tr>
         <tr><td>Deskripsi</td><td>Uraian singkat untuk seluruh jurnal.</td><td>Ditampilkan pada lembar <code>Journal</code> dan laporan.</td></tr>
-        <tr><td>Pelanggan atau Pemasok</td><td>Nama dari <code>Data Master &gt; Pihak</code>.</td><td>Gunakan <strong>Tambah Baru</strong> untuk menyimpan pihak baru. Nama yang belum dikenal akan menghalangi penyimpanan sampai ditambahkan.</td></tr>
+        <tr><td>Pelanggan atau Pemasok</td><td>Nama dari <code>Data Master &gt; Pihak</code> atau <code>Dukungan Lain &gt; Pihak (Pelanggan atau Pemasok)</code>.</td><td>Gunakan <strong>Tambah Baru</strong> untuk menyimpan pihak baru, termasuk nomor telepon opsional. Nama yang belum dikenal akan menghalangi penyimpanan sampai ditambahkan.</td></tr>
         <tr><td>Jenis Jurnal</td><td>Jenis harian, khusus, atau akhir periode.</td><td>Contoh: Jurnal Umum, Jurnal Penjualan, Jurnal Pembelian, Jurnal Penerimaan Kas, Jurnal Pengeluaran Kas, Jurnal Penggajian, Perolehan Aset, Pelepasan Aset, Modal &amp; Ekuitas, Pinjaman &amp; Pembiayaan, Transfer Dana, Penyesuaian Persediaan, Transfer Produksi, Jurnal Penyesuaian, Jurnal Pembalik, Jurnal Penutup, Jurnal Saldo Awal, Jurnal Koreksi, dan Jurnal Reklasifikasi.</td></tr>
         <tr><td>Dokumen Pendukung</td><td>Referensi dokumen opsional.</td><td>Menjaga bukti audit tetap terkait dengan jurnal.</td></tr>
       </table>
@@ -462,14 +463,14 @@
       <table>
         <tr><th>Tindakan Menu</th><th>Tujuan</th><th>Cara Menggunakan</th></tr>
         <tr>
-          <td><strong>Buat Laporan untuk Sebuah Bulan...</strong></td>
-          <td>Membuat paket laporan utama untuk satu bulan, termasuk Buku Besar dan laporan keuangan.</td>
-          <td>Pilih bulan ketika diminta. Buka lembar laporan yang dihasilkan dan tinjau spanduk mode.</td>
+          <td><strong>Buat Laporan Bulanan...</strong></td>
+          <td>Membuat laporan keuangan yang dipilih untuk satu bulan. Pilih <strong>Semua laporan keuangan</strong> atau <strong>Pilih laporan (centang)</strong> lalu centang laporan yang diinginkan.</td>
+          <td>Pilih bulan dan pilihan laporan. Hanya lembar yang dipilih yang ditulis dan ditampilkan. Pilihan ini diingat oleh menu Perbarui Laporan.</td>
         </tr>
         <tr>
-          <td><strong>Muat Ulang Laporan (bulan yang sama)</strong></td>
-          <td>Menyusun kembali bulan terakhir yang dilaporkan setelah jurnal baru diposting.</td>
-          <td>Gunakan setelah memposting koreksi atau jurnal yang terlambat. Bulan yang sama digunakan kembali.</td>
+          <td><strong>Perbarui Laporan (bulan yang sama)</strong></td>
+          <td>Menyusun kembali laporan yang sama setelah jurnal baru diposting.</td>
+          <td>Gunakan setelah memposting koreksi atau jurnal yang terlambat. Bulan dan pilihan laporan yang tersimpan digunakan kembali.</td>
         </tr>
         <tr>
           <td><strong>Umur Piutang dan Utang...</strong></td>
@@ -496,20 +497,35 @@
       <p>Gunakan empat tab berikut:</p>
       <ul>
         <li><strong>Profil.</strong> Identitas dan logo perusahaan. Pilih <strong>Simpan Logo</strong>, <strong>Hapus Logo</strong>, atau <strong>Simpan Profil</strong>.</li>
-        <li><strong>Akuntansi.</strong> Jenis usaha, awal tahun buku, dan pemetaan akun bawaan. Pilih <strong>Simpan Pengaturan Akuntansi</strong>.</li>
-        <li><strong>Akun.</strong> Akun bawaan yang digunakan oleh jurnal yang dibuat otomatis. Pilih <strong>Simpan Akun Bawaan</strong>.</li>
+        <li><strong>Akuntansi.</strong> Jenis usaha, awal tahun buku, dan pengaturan kebijakan akuntansi. Pilih <strong>Simpan Pengaturan Akuntansi</strong>.</li>
+        <li><strong>Akun.</strong> Akun bawaan yang digunakan oleh jurnal yang dibuat otomatis. Pilih <strong>Tambah akun bawaan</strong> untuk membuat pemetaan tambahan, lalu ubah nama dan akunnya atau gunakan <strong>Hapus</strong> untuk menghapusnya. Pilih <strong>Simpan Akun Bawaan</strong> untuk menerapkan perubahan. Setiap akun bawaan dan akun tambahan harus ada serta aktif di COA; daftar pemeriksaan Mulai Operasional juga memeriksanya.</li>
         <li><strong>Sistem.</strong> Mode, daftar pemeriksaan Mulai Operasional, serta kontrol periode dan bank. Pilih <strong>Simpan Pengaturan Sistem</strong>.</li>
       </ul>
       <p><strong>Atur Ulang Data Latihan</strong> menghapus data yang khusus untuk latihan. <strong>Mulai Operasional</strong> membuka konfirmasi yang mewajibkan nama perusahaan persis dan daftar pemeriksaan yang lengkap.</p>
 
-      <h3>9.2 Instal / Perbarui Sistem</h3>
-      <p>Membuat atau memperbarui lembar, header, dan pengaturan bawaan yang diperlukan. Aman untuk dijalankan kembali setelah pembaruan. Proses ini tidak menghapus jurnal yang telah diposting.</p>
+      <h3>9.2 Update</h3>
+      <p>Membuka dua alat pemeliharaan: <strong>Instal / Perbarui Sistem</strong> dan <strong>Periksa COA &amp; Pengaturan</strong>.</p>
 
-      <h3>9.3 Periksa COA &amp; Pengaturan</h3>
-      <p>Menjalankan pemeriksaan terhadap daftar akun dan pengaturan yang diperlukan. Perbaiki setiap masalah yang dilaporkan sebelum membuat laporan atau beralih ke mode LIVE.</p>
+      <h3>9.3 Instal / Perbarui Sistem</h3>
+      <p>Membuat atau memperbarui lembar, header, dan pengaturan bawaan yang diperlukan. Aman untuk dijalankan kembali setelah pembaruan. Proses ini tidak menghapus jurnal yang telah diposting. Proses ini juga menambahkan kolom <code>Phone</code> pada lembar <code>Parties</code>.</p>
 
-      <h3>9.4 Panduan Pengguna / SOP</h3>
+      <h3>9.4 Periksa COA &amp; Pengaturan</h3>
+      <p>Menjalankan pemeriksaan terhadap daftar akun dan pengaturan yang diperlukan, termasuk pemetaan akun bawaan tambahan. Perbaiki setiap masalah yang dilaporkan sebelum membuat laporan atau beralih ke mode LIVE.</p>
+
+      <h3>9.5 Bahasa</h3>
+      <p>Mengubah tampilan dan dialog antara <strong>English</strong> dan <strong>Bahasa</strong>. Tidak ada tombol pengaturan ulang bahasa.</p>
+
+      <h3>9.6 Panduan Pengguna / SOP</h3>
       <p>Membuka panduan ini. Salinan terjemahan mempertahankan urutan bagian dan langkah alur kerja yang sama.</p>
+
+      <h3>9.7 Dukungan Lain</h3>
+      <p class="path">Buka dari <code>Dukungan Lain</code> &gt; <code>Pihak (Pelanggan atau Pemasok)</code>.</p>
+      <p>Gunakan popup ini untuk mengelola daftar pihak tanpa mengedit lembar secara langsung. Daftar menampilkan ID, Nama, Jenis, NPWP/NIK, Telepon, Syarat, dan Status. Pencarian cocok dengan nama, ID, telepon, atau NPWP/NIK; <strong>Jenis</strong> menyaring Pelanggan, Pemasok, atau Keduanya.</p>
+      <ul>
+        <li><strong>Tambah pihak.</strong> Isi Nama, Jenis, Nomor telepon, NPWP/NIK, Syarat pembayaran (hari), Alamat, dan Aktif. Nomor telepon juga tersedia pada dialog <strong>Tambah Baru</strong> di formulir jurnal.</li>
+        <li><strong>Ubah.</strong> Membuka formulir yang sama untuk pihak yang sudah ada. Biarkan <strong>Aktif</strong> tercentang apabila pihak tersebut masih dapat dipilih dalam jurnal.</li>
+        <li><strong>Hapus.</strong> Pihak yang belum dipakai akan dihapus. Pihak yang sudah dipakai dalam jurnal akan ditetapkan sebagai <strong>Nonaktif</strong> agar laporan lama tetap benar. Pihak nonaktif tetap ada dalam daftar tetapi tidak dapat dipilih untuk jurnal baru.</li>
+      </ul>
     </section>
 
     <section class="doc" id="s10">
@@ -560,13 +576,22 @@
         <li>Tinjau dan posting semua draf yang dihasilkan.</li>
         <li>Buat laporan bulanan, lalu tetapkan tanggal kunci setelah mendapat persetujuan.</li>
       </ol>
+
+      <h3>10.6 Memelihara daftar pihak</h3>
+      <ol>
+        <li>Buka <strong>Dukungan Lain</strong> &gt; <strong>Pihak (Pelanggan atau Pemasok)</strong>.</li>
+        <li>Cari berdasarkan nama, ID, telepon, atau NPWP/NIK, atau saring berdasarkan Jenis.</li>
+        <li>Pilih <strong>Tambah pihak</strong> untuk membuat pelanggan atau pemasok, termasuk nomor telepon.</li>
+        <li>Pilih <strong>Ubah</strong> untuk memperbaiki detail kontak, termin, jenis, atau status.</li>
+        <li>Pilih <strong>Hapus</strong> untuk menghapus pihak yang belum dipakai, atau terima bahwa pihak yang sudah dipakai menjadi <strong>Nonaktif</strong>.</li>
+      </ol>
     </section>
 
     <section class="doc" id="s11">
       <h2>11. Pesan dan pemecahan masalah</h2>
       <table>
         <tr><th>Pesan atau Gejala</th><th>Arti</th><th>Yang Harus Dilakukan</th></tr>
-        <tr><td>Nama tidak ada dalam daftar Pihak</td><td>Pelanggan atau Pemasok belum disimpan di Data Master.</td><td>Pilih <strong>Tambah Baru</strong> pada formulir jurnal atau tambahkan pihak tersebut di Data Master terlebih dahulu.</td></tr>
+        <tr><td>Nama tidak ada dalam daftar Pihak</td><td>Pelanggan atau Pemasok belum disimpan, atau berstatus Nonaktif.</td><td>Pilih <strong>Tambah Baru</strong> pada formulir jurnal, tambahkan pihak melalui <strong>Dukungan Lain &gt; Pihak (Pelanggan atau Pemasok)</strong>, atau ubah pihak yang ada menjadi Aktif.</td></tr>
         <tr><td>Pelanggan / Pemasok belum diisi</td><td>Baris AR atau AP tidak memiliki pihak yang ditetapkan.</td><td>Pilih <strong>Tinjau Kembali</strong> untuk memperbaikinya, atau <strong>Tetap Posting</strong> apabila Buku Besar saja sudah memadai.</td></tr>
         <tr><td>Debit dan kredit harus seimbang</td><td>Minimal dua baris diperlukan dan total belum cocok.</td><td>Tambah atau perbaiki baris sampai selisih menjadi nol.</td></tr>
         <tr><td>Jurnal terkunci</td><td>Tanggal jurnal pada atau sebelum tanggal kunci.</td><td>Gunakan tanggal yang lebih akhir atau minta pengguna berwenang menghapus kunci.</td></tr>

@@ -15,7 +15,16 @@
  * ============================================================
  */
 
-const REPORT_SHEETS = ['Trial Balance', 'General Ledger', 'Income Statement', 'Balance Sheet', 'Equity Changes', 'Cash Flow'];
+const REPORT_OPTIONS = [
+  { key: 'tb', sheet: 'Trial Balance' },
+  { key: 'gl', sheet: 'General Ledger' },
+  { key: 'is', sheet: 'Income Statement' },
+  { key: 'bs', sheet: 'Balance Sheet' },
+  { key: 'eq', sheet: 'Equity Changes' },
+  { key: 'cf', sheet: 'Cash Flow' }
+];
+const REPORT_KEYS = REPORT_OPTIONS.map(o => o.key);
+const REPORT_SHEETS = REPORT_OPTIONS.map(o => o.sheet);
 const NO_FLOW = ['Closing Entry', 'Opening Entry'];   // never count as income, expense, or cash movement
 
 function sectionOf_(a) {
@@ -329,25 +338,63 @@ function computeReports_(posted, coa, period, m0, meta) {
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const MONTH_NAMES_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
-function generateReports() {
-  const ui = SpreadsheetApp.getUi();
+function getReportSelection_() {
   const props = PropertiesService.getDocumentProperties();
   const now = new Date();
-  const def = props.getProperty('REPORT_PERIOD') || (now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0'));
-  const res = ui.prompt(tr_('Generate reports', 'Buat Laporan'),
-    tr_('Which month? Enter it as YYYY-MM, for example 2026-11.\nOnly posted journals are included.',
-      'Bulan yang mana? Masukkan dalam format YYYY-MM, misalnya 2026-11.\nHanya jurnal yang sudah diposting yang disertakan.'), ui.ButtonSet.OK_CANCEL);
-  if (res.getSelectedButton() !== ui.Button.OK) return;
-  const text = String(res.getResponseText() || def).trim();
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(text)) { ui.alert(tr_('Enter the month as YYYY-MM, for example 2026-11.', 'Masukkan bulan dalam format YYYY-MM, misalnya 2026-11.')); return; }
-  props.setProperty('REPORT_PERIOD', text);
-  runReports_(text);
+  const fallback = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  let period = String(props.getProperty('REPORT_PERIOD') || fallback).trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) period = fallback;
+  let mode = String(props.getProperty('REPORT_MODE') || 'all');
+  if (mode === 'balance') mode = 'custom';
+  if (['all', 'custom'].indexOf(mode) < 0) mode = 'all';
+  let reports = [];
+  try {
+    const saved = JSON.parse(props.getProperty('REPORT_SELECTION') || 'null');
+    if (Array.isArray(saved)) reports = saved.filter(key => REPORT_KEYS.indexOf(key) >= 0);
+  } catch (e) {}
+  if (mode === 'all' || !reports.length) { mode = 'all'; reports = REPORT_KEYS.slice(); }
+  return { period: period, mode: mode, reports: reports };
+}
+
+function showReportDialog_() {
+  const indonesian = getLanguage() === 'ID';
+  const t = HtmlService.createTemplateFromFile(indonesian ? 'ReportOptionsId' : 'ReportOptions');
+  t.initial = getReportSelection_();
+  SpreadsheetApp.getUi().showModalDialog(
+    t.evaluate().setWidth(500).setHeight(540),
+    indonesian ? 'Pilih Laporan' : 'Choose Reports'
+  );
+}
+
+function generateReports() {
+  showReportDialog_();
+}
+
+function generateReportSelection(payload) {
+  const p = payload || {};
+  const period = String(p.period || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+    throw new Error(tr_('Enter the month as YYYY-MM, for example 2026-11.', 'Masukkan bulan dalam format YYYY-MM, misalnya 2026-11.'));
+  }
+  const mode = String(p.mode || '');
+  let reports;
+  if (mode === 'all') reports = REPORT_KEYS.slice();
+  else if (mode === 'custom') {
+    reports = Array.isArray(p.reports) ? p.reports.filter(key => REPORT_KEYS.indexOf(key) >= 0) : [];
+    if (!reports.length) throw new Error(tr_('Choose at least one report.', 'Pilih minimal satu laporan.'));
+  } else throw new Error(tr_('Choose a report option.', 'Pilih opsi laporan.'));
+
+  const props = PropertiesService.getDocumentProperties();
+  props.setProperty('REPORT_PERIOD', period);
+  props.setProperty('REPORT_MODE', mode);
+  props.setProperty('REPORT_SELECTION', JSON.stringify(reports));
+  const result = runReports_(period, reports, { web: p.web === true });
+  return { period: period, reports: reports, message: result.message, sheets: result.sheets };
 }
 
 function refreshReports() {
-  const p = PropertiesService.getDocumentProperties().getProperty('REPORT_PERIOD');
-  if (!p) { generateReports(); return; }
-  runReports_(p);
+  const selection = getReportSelection_();
+  runReports_(selection.period, selection.reports);
 }
 
 function loadPostedForReports_() {
@@ -369,8 +416,13 @@ function loadPostedForReports_() {
   return out;
 }
 
-function runReports_(text) {
-  const ui = SpreadsheetApp.getUi();
+function runReports_(text, keys, options) {
+  const web = !!(options && options.web);
+  const ui = web ? null : SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const requested = Array.isArray(keys) ? keys.filter(key => REPORT_KEYS.indexOf(key) >= 0) : REPORT_KEYS.slice();
+  const chosen = requested.length ? requested : REPORT_KEYS.slice();
+  const reportOptions = chosen.map(key => REPORT_OPTIONS.filter(o => o.key === key)[0]);
   const period = Number(text.replace('-', ''));
   const settings = readSettings_();
   const m0 = Number(settings['Fiscal Year Start Month']) || 1;
@@ -381,25 +433,36 @@ function runReports_(text) {
   const eqLabel = tr_('Year to date to ' + monthEn, 'Sampai dengan tahun berjalan pada ' + monthId);
   const meta = { company: settings['Company Name'] || '', label: label, bsLabel: bsLabel, eqLabel: eqLabel };
   const reports = computeReports_(loadPostedForReports_(), readCoa_(), period, m0, meta);
-  writeReport_('Trial Balance', reports.tb);
-  writeReport_('General Ledger', reports.gl);
-  writeReport_('Income Statement', reports.is);
-  writeReport_('Balance Sheet', reports.bs);
-  writeReport_('Equity Changes', reports.eq);
-  writeReport_('Cash Flow', reports.cf);
-  const checks = [
-    tr_('Trial balance: ' + (reports.tb.diff ? 'DOES NOT BALANCE (' + reports.tb.diff + ')' : 'balanced'),
+  const written = [];
+  reportOptions.forEach(opt => {
+    const sh = ss.getSheetByName(opt.sheet);
+    if (sh && sh.isHidden()) sh.showSheet();
+    writeReport_(opt.sheet, reports[opt.key]);
+    written.push(opt.sheet);
+  });
+  const firstKey = chosen.indexOf('is') >= 0 ? 'is' : chosen[0];
+  const firstOption = REPORT_OPTIONS.filter(o => o.key === firstKey)[0];
+  const active = ss.getSheetByName(firstOption.sheet);
+  if (active) ss.setActiveSheet(active);
+  REPORT_OPTIONS.forEach(opt => {
+    if (chosen.indexOf(opt.key) >= 0) return;
+    const sh = ss.getSheetByName(opt.sheet);
+    if (sh && !sh.isHidden() && sh.getSheetId() !== ss.getActiveSheet().getSheetId()) sh.hideSheet();
+  });
+  const checksByKey = {
+    tb: tr_('Trial balance: ' + (reports.tb.diff ? 'DOES NOT BALANCE (' + reports.tb.diff + ')' : 'balanced'),
       'Neraca Saldo: ' + (reports.tb.diff ? 'TIDAK SEIMBANG (' + reports.tb.diff + ')' : 'seimbang')),
-    tr_('Balance sheet: ' + (reports.bs.diff ? 'DOES NOT BALANCE (' + reports.bs.diff + ')' : 'balanced'),
+    bs: tr_('Balance sheet: ' + (reports.bs.diff ? 'DOES NOT BALANCE (' + reports.bs.diff + ')' : 'balanced'),
       'Neraca: ' + (reports.bs.diff ? 'TIDAK SEIMBANG (' + reports.bs.diff + ')' : 'seimbang')),
-    tr_('Equity statement agrees with balance sheet: ' + (reports.eq.diff ? 'NO (' + reports.eq.diff + ')' : 'yes'),
+    eq: tr_('Equity statement agrees with balance sheet: ' + (reports.eq.diff ? 'NO (' + reports.eq.diff + ')' : 'yes'),
       'Laporan perubahan ekuitas sesuai dengan neraca: ' + (reports.eq.diff ? 'TIDAK (' + reports.eq.diff + ')' : 'ya')),
-    tr_('Cash flow agrees with cash and bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'NO' : 'yes'),
+    cf: tr_('Cash flow agrees with cash and bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'NO' : 'yes'),
       'Arus kas sesuai dengan kas dan bank: ' + (reports.cf.diff[0] || reports.cf.diff[1] ? 'TIDAK' : 'ya'))
-  ];
-  ui.alert(tr_('Reports for ' + monthEn, 'Laporan untuk bulan ' + monthId), checks.concat(reports.warnings).join('\n') +
-    tr_('\n\nSheets: ', '\n\nLembar: ') + REPORT_SHEETS.join(', ') + '.', ui.ButtonSet.OK);
-  SpreadsheetApp.getActiveSpreadsheet().setActiveSheet(SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Income Statement'));
+  };
+  const checks = chosen.map(key => checksByKey[key]).filter(Boolean);
+  const message = checks.concat(reports.warnings).join('\n') + tr_('\n\nSheets: ', '\n\nLembar: ') + written.join(', ') + '.';
+  if (web) return { success: true, sheets: written, checks: checks, message: message };
+  ui.alert(tr_('Reports for ' + monthEn, 'Laporan untuk bulan ' + monthId), message, ui.ButtonSet.OK);
 }
 
 function colLetter_(n) {

@@ -334,10 +334,6 @@ function useLanguageIndonesian() {
   return { success: true, language: 'ID' };
 }
 
-function resetLanguage() {
-  return useLanguageEnglish();
-}
-
 function showAccountingMenu() {
   const indonesian = getLanguage() === 'ID';
   SpreadsheetApp.getUi().showSidebar(
@@ -352,8 +348,9 @@ function showAccountingMenu() {
    2. SETUP
 ============================================================ */
 
-function installSystem() {
-  const ui = SpreadsheetApp.getUi();
+function installSystem(options) {
+  const web = !!(options && options.web);
+  const ui = web ? null : SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const log = [];
 
@@ -376,21 +373,26 @@ function installSystem() {
   let coa = ss.getSheetByName(SHEETS.COA);
   let writeNewCoa = !coa;
   if (coa && !coaIsCurrent_()) {
-    const answer = ui.alert(
-      'Replace the chart of accounts?',
-      'The current COA sheet does not match the new template ' +
-      '(English names, new account codes, tax accounts for PPh 21/22/23/4(2)).\n\n' +
-      'YES: keep your current sheet as a backup and create the new COA.\n' +
-      'NO: keep the current COA. You must then update the account codes in Settings yourself.',
-      ui.ButtonSet.YES_NO
-    );
-    if (answer === ui.Button.YES) {
+    let replaceCoa = false;
+    if (web) replaceCoa = options.replaceCoa === true;
+    else {
+      const answer = ui.alert(
+        'Replace the chart of accounts?',
+        'The current COA sheet does not match the new template ' +
+        '(English names, new account codes, tax accounts for PPh 21/22/23/4(2)).\n\n' +
+        'YES: keep your current sheet as a backup and create the new COA.\n' +
+        'NO: keep the current COA. You must then update the account codes in Settings yourself.',
+        ui.ButtonSet.YES_NO
+      );
+      replaceCoa = answer === ui.Button.YES;
+    }
+    if (replaceCoa) {
       const stamp = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyyMMdd_HHmm');
       const backupName = uniqueSheetName_(ss, 'COA_BACKUP_' + stamp);
       coa.setName(backupName);
       writeNewCoa = true;
       log.push(`Old COA kept as "${backupName}".`);
-    }
+    } else log.push('COA: outdated sheet kept. Update the account codes in Settings yourself.');
   }
   if (writeNewCoa) {
     coa = ss.insertSheet(SHEETS.COA);
@@ -421,11 +423,14 @@ function installSystem() {
       'Check them, then delete or archive them.');
   }
 
-  ui.alert('Setup finished', log.join('\n') + '\n\nNext: ACCOUNTING > Setup > Check COA & Settings.', ui.ButtonSet.OK);
+  const message = log.join('\n') + '\n\nNext: ACCOUNTING > Setup > Check COA & Settings.';
+  if (web) return { success: true, log: log.join('\n'), message: message };
+  ui.alert('Setup finished', message, ui.ButtonSet.OK);
 }
 
-function runSetupCheck() {
+function runSetupCheck(options) {
   const issues = collectSetupIssues_();
+  if (options && options.web) return { success: issues.length === 0, issues: issues };
   const ui = SpreadsheetApp.getUi();
   if (!issues.length) {
     ui.alert('Check passed', 'COA and Settings look consistent.', ui.ButtonSet.OK);
@@ -693,6 +698,10 @@ function getAppConfig() {
   const coa = readCoa_();
   const mappings = {};
   ACCOUNT_MAPPINGS.forEach(m => { mappings[m[0]] = s[mappingKey_(m)] || ''; });
+  const customMappings = {};
+  Object.keys(s).filter(key => key.indexOf(CUSTOM_ACCOUNT_PREFIX) === 0).forEach(key => {
+    customMappings[key.slice(CUSTOM_ACCOUNT_PREFIX.length)] = String(s[key] || '').trim();
+  });
   const businessType = BUSINESS_TYPES.includes(s['Business Type']) ? s['Business Type'] : 'Trading';
   const accountScopes = {};
   JOURNAL_TYPES.forEach(g => g.items.forEach(type => {
@@ -703,6 +712,7 @@ function getAppConfig() {
     company: s['Company Name'] || '',
     businessType: businessType,
     mappings: mappings,
+    customMappings: customMappings,
     journalTypes: JOURNAL_TYPES,
     fiscalStartMonth: Number(s['Fiscal Year Start Month']) || 1,
     parties: getActiveParties_(),
@@ -763,8 +773,9 @@ function collectSetupIssues_() {
     issues.push('Settings: Business Type must be Service, Trading, or Manufacturing.');
   }
   const byCode = new Map(coa.map(a => [a.code, a]));
-  ACCOUNT_MAPPINGS.forEach(m => {
-    const key = mappingKey_(m);
+  const allKeys = ACCOUNT_MAPPINGS.map(m => mappingKey_(m))
+    .concat(Object.keys(s).filter(key => key.indexOf(CUSTOM_ACCOUNT_PREFIX) === 0));
+  allKeys.forEach(key => {
     const code = String(s[key] || '').trim();
     const acc = byCode.get(code);
     if (!code) issues.push(`Settings: "${key}" is empty.`);

@@ -23,6 +23,16 @@
 
     <div class="divider"></div>
 
+    <div class="group-title">OTHER SUPPORT</div>
+    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="support-submenu" data-submenu="support-submenu">
+      <span class="icon">🧰</span><span class="label">Other support</span><span class="arrow">&gt;</span>
+    </div>
+    <div class="submenu" id="support-submenu" hidden>
+      <button class="submenu-item" type="button" data-action="showPartiesManager">Parties (Customer or Supplier)</button>
+    </div>
+
+    <div class="divider"></div>
+
     <div class="group-title">CLOSING &amp; PERIODIC</div>
     <button class="menu-item" type="button" data-action="showPeriodEnd">
       <span class="icon">🗓️</span><span class="label">Period-End Tools</span>
@@ -31,6 +41,13 @@
     <div class="divider"></div>
 
     <div class="group-title">REPORTS &amp; ASSETS</div>
+    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="inventory-submenu" data-submenu="inventory-submenu">
+      <span class="icon">📦</span><span class="label">Inventory</span><span class="arrow">&gt;</span>
+    </div>
+    <div class="submenu" id="inventory-submenu" hidden>
+      <button class="submenu-item" type="button" data-action="processStockMovements">Process Stock Movements</button>
+      <button class="submenu-item" type="button" data-action="generateStockSummary">Stock Summary...</button>
+    </div>
     <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="reports-submenu" data-submenu="reports-submenu">
       <span class="icon">📊</span><span class="label">Reports</span><span class="arrow">&gt;</span>
     </div>
@@ -38,13 +55,6 @@
       <button class="submenu-item" type="button" data-action="generateReports">Generate Reports for a Month...</button>
       <button class="submenu-item" type="button" data-action="refreshReports">Refresh Reports (same month)</button>
       <button class="submenu-item" type="button" data-action="generateAging">AR and AP Aging...</button>
-    </div>
-    <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="inventory-submenu" data-submenu="inventory-submenu">
-      <span class="icon">📦</span><span class="label">Inventory</span><span class="arrow">&gt;</span>
-    </div>
-    <div class="submenu" id="inventory-submenu" hidden>
-      <button class="submenu-item" type="button" data-action="processStockMovements">Process Stock Movements</button>
-      <button class="submenu-item" type="button" data-action="generateStockSummary">Stock Summary...</button>
     </div>
 
     <div class="divider"></div>
@@ -55,17 +65,21 @@
     </div>
     <div class="submenu" id="setup-submenu" hidden>
       <button class="submenu-item" type="button" data-action="showCompanySettings">Company Profile &amp; Settings</button>
-      <button class="submenu-item" type="button" data-action="installSystem">Install / Update System</button>
-      <button class="submenu-item" type="button" data-action="runSetupCheck">Check COA &amp; Settings</button>
-      <button class="submenu-item" type="button" data-action="showUserGuide">User Guide / SOP</button>
+      <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="update-submenu" data-submenu="update-submenu">
+        <span class="label">Update</span><span class="arrow">&gt;</span>
+      </div>
+      <div class="submenu" id="update-submenu" hidden>
+        <button class="submenu-item" type="button" data-action="installSystem">Install / Update System</button>
+        <button class="submenu-item" type="button" data-action="runSetupCheck">Check COA &amp; Settings</button>
+      </div>
       <div class="menu-item submenu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="language-submenu" data-submenu="language-submenu">
         <span class="label">Language</span><span class="arrow">&gt;</span>
       </div>
       <div class="submenu" id="language-submenu" hidden>
         <button class="submenu-item" type="button" data-action="useLanguageEnglish">English</button>
-        <button class="submenu-item" type="button" data-action="useLanguageIndonesian">Bahasa Indonesia</button>
-        <button class="submenu-item" type="button" data-action="resetLanguage">Reset to English</button>
+        <button class="submenu-item" type="button" data-action="useLanguageIndonesian">Bahasa</button>
       </div>
+      <button class="submenu-item" type="button" data-action="showUserGuide">User Guide / SOP</button>
     </div>
 
     <div class="status" id="status" hidden></div>

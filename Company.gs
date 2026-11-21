@@ -1,6 +1,14 @@
 const COMPANY_LOG_SHEET = 'Settings Log';
 const COMPANY_LOG_HEADERS = ['Time', 'User', 'Setting', 'Old Value', 'New Value'];
 const COMPANY_PROFILE_KEYS = ['Company Name', 'Legal Name', 'NPWP', 'NIB', 'Address', 'Phone', 'Email'];
+const CUSTOM_ACCOUNT_PREFIX = 'Account: Custom: ';
+
+function customAccountMappings_(settings) {
+  return Object.keys(settings || {})
+    .filter(key => key.indexOf(CUSTOM_ACCOUNT_PREFIX) === 0 && String(key).length > CUSTOM_ACCOUNT_PREFIX.length)
+    .map(key => ({ key: key, label: key.slice(CUSTOM_ACCOUNT_PREFIX.length), code: String(settings[key] || '').trim() }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
 
 function showCompanySettings() {
   ensureCompanySetup_();
@@ -101,6 +109,9 @@ function getGoLiveChecklist_() {
     const code = String(settings[mappingKey_(m)] || '').trim();
     const account = map.get(code);
     return !!account && account.active;
+  }) && customAccountMappings_(settings).every(m => {
+    const account = map.get(m.code);
+    return !!account && account.active;
   });
   return [
     { id: 'coa', label: 'COA is valid', ok: coaValid },
@@ -121,6 +132,13 @@ function getCompanySettings() {
     code: String(settings[mappingKey_(m)] || '').trim(),
     options: options
   }));
+  const custom = customAccountMappings_(settings).map(m => ({
+    key: m.key,
+    label: m.label,
+    code: m.code,
+    options: options,
+    custom: true
+  }));
   return {
     mode: mode,
     profile: {
@@ -140,7 +158,7 @@ function getCompanySettings() {
       currency: 'IDR',
       inventoryMethod: 'Perpetual'
     },
-    accounts: mappings,
+    accounts: mappings.concat(custom),
     system: {
       mode: mode,
       lockDate: settings['Lock Date'] || '',
@@ -207,6 +225,28 @@ function saveCompanyAccounting(payload) {
   return { success: true, message: tr_('Accounting settings saved.', 'Pengaturan akuntansi tersimpan.') };
 }
 
+function deleteSettingValue_(key) {
+  const sheet = getRequiredSheet_(SHEETS.SETTINGS);
+  const last = Math.max(sheet.getLastRow(), 1);
+  const values = sheet.getRange(2, 1, last, 2).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === key) {
+      const oldValue = String(values[i][1]);
+      sheet.deleteRow(i + 2);
+      writeSettingsLog_(key, oldValue, '');
+      return true;
+    }
+  }
+  return false;
+}
+
+function removeCompanyAccountMapping(key) {
+  const value = String(key == null ? '' : key).trim();
+  if (value.indexOf(CUSTOM_ACCOUNT_PREFIX) !== 0) throw new Error('Only additional mappings can be deleted.');
+  deleteSettingValue_(value);
+  return { success: true, message: tr_('Additional account mapping removed.', 'Pemetaan akun tambahan dihapus.') };
+}
+
 function saveCompanyAccounts(payload) {
   const mappings = payload && payload.mappings ? payload.mappings : {};
   const coa = getCoaMap_();
@@ -219,6 +259,22 @@ function saveCompanyAccounts(payload) {
     if (!account) throw new Error('Account ' + code + ' does not exist in the COA.');
     if (!account.active) throw new Error('Account ' + code + ' is inactive.');
     setSettingValue_(key, code);
+  });
+  Object.keys(mappings).forEach(key => {
+    if (String(key).indexOf(CUSTOM_ACCOUNT_PREFIX) !== 0) return;
+    const label = String(key).slice(CUSTOM_ACCOUNT_PREFIX.length).trim();
+    if (!label) throw new Error('Custom mapping name is required.');
+    const code = String(mappings[key] || '').trim();
+    if (!code) throw new Error('Choose an account for ' + label + '.');
+    const account = coa.get(code);
+    if (!account) throw new Error('Account ' + code + ' does not exist in the COA.');
+    if (!account.active) throw new Error('Account ' + code + ' is inactive.');
+    setSettingValue_(key, code);
+  });
+  const removed = payload && Array.isArray(payload.removedKeys) ? payload.removedKeys : [];
+  removed.forEach(key => {
+    const value = String(key || '').trim();
+    if (value.indexOf(CUSTOM_ACCOUNT_PREFIX) === 0) deleteSettingValue_(value);
   });
   return { success: true, message: tr_('Default accounts saved.', 'Akun default tersimpan.') };
 }

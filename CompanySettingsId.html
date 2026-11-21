@@ -172,9 +172,10 @@
         <h2>Pemetaan Akun Bawaan</h2>
         <p class="note">Setiap akun harus ada dan aktif di COA.</p>
         <table>
-          <thead><tr><th>Pengaturan</th><th>Akun</th></tr></thead>
+          <thead><tr><th>Pengaturan</th><th>Akun</th><th></th></tr></thead>
           <tbody id="accountRows"></tbody>
         </table>
+        <div class="row" style="margin-top:12px"><button class="secondary" id="addAccountMapping" type="button">Tambah akun bawaan</button></div>
       </div>
       <div class="actions"><button class="primary" type="submit">Simpan Akun Bawaan</button></div>
     </form>
@@ -224,6 +225,48 @@
   <script>
     let DATA = null;
     const $ = id => document.getElementById(id);
+    const CUSTOM_ACCOUNT_PREFIX = 'Account: Custom: ';
+
+    function accountOptions() {
+      const first = DATA && DATA.accounts.find(account => account.options && account.options.length);
+      return first ? first.options.map(o => ({ value: o.code, text: o.code + ' - ' + o.name })) : [];
+    }
+
+    function accountSelect(key, code) {
+      const select = document.createElement('select');
+      select.setAttribute('data-account-key', key);
+      fillSelect(select, accountOptions(), code, 'Tidak ada akun aktif');
+      return select;
+    }
+
+    function removeButton(onClick) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'danger';
+      button.textContent = 'Hapus';
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    function addMappingRow() {
+      const tr = document.createElement('tr');
+      const nameCell = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Nama pemetaan';
+      input.setAttribute('data-account-label', '');
+      nameCell.appendChild(input);
+      const selectCell = document.createElement('td');
+      selectCell.className = 'select-cell';
+      selectCell.appendChild(accountSelect('', ''));
+      const actionCell = document.createElement('td');
+      actionCell.appendChild(removeButton(() => tr.remove()));
+      tr.appendChild(nameCell);
+      tr.appendChild(selectCell);
+      tr.appendChild(actionCell);
+      $('accountRows').appendChild(tr);
+      input.focus();
+    }
 
     const BUSINESS_TYPE_LABELS = {
       Service: 'Jasa',
@@ -284,6 +327,9 @@
       'Only IDR is supported.': 'Hanya IDR yang didukung.',
       'Accounting settings saved.': 'Pengaturan akuntansi tersimpan.',
       'Default accounts saved.': 'Akun bawaan tersimpan.',
+      'Custom mapping name is required.': 'Nama pemetaan tambahan wajib diisi.',
+      'Additional account mapping removed.': 'Pemetaan akun tambahan dihapus.',
+      'Only additional mappings can be deleted.': 'Hanya pemetaan tambahan yang dapat dihapus.',
       'System data is empty or invalid.': 'Data sistem kosong atau tidak valid.',
       'LIVE mode is one way and cannot be changed.': 'Mode LIVE bersifat satu arah dan tidak dapat diubah.',
       'Use Go Live to switch to LIVE mode.': 'Gunakan Mulai Operasional untuk beralih ke mode LIVE.',
@@ -402,15 +448,24 @@
       data.accounts.forEach(account => {
         const tr = document.createElement('tr');
         const nameCell = document.createElement('td');
-        nameCell.textContent = ACCOUNT_LABELS[account.label] || account.label;
+        if (account.custom) {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = account.label;
+          input.setAttribute('data-account-label', '');
+          input.setAttribute('data-old-key', account.key);
+          nameCell.appendChild(input);
+        } else nameCell.textContent = ACCOUNT_LABELS[account.label] || account.label;
         const selectCell = document.createElement('td');
         selectCell.className = 'select-cell';
-        const select = document.createElement('select');
-        select.setAttribute('data-account-key', account.key);
-        fillSelect(select, account.options.map(o => ({ value: o.code, text: o.code + ' - ' + o.name })), account.code, 'Tidak ada akun aktif');
-        selectCell.appendChild(select);
+        selectCell.appendChild(accountSelect(account.key, account.code));
+        const actionCell = document.createElement('td');
+        if (account.custom) {
+          actionCell.appendChild(removeButton(() => runServer('removeCompanyAccountMapping', account.key, load)));
+        }
         tr.appendChild(nameCell);
         tr.appendChild(selectCell);
+        tr.appendChild(actionCell);
         body.appendChild(tr);
       });
 
@@ -534,11 +589,24 @@
     $('accountsPanel').addEventListener('submit', event => {
       event.preventDefault();
       const mappings = {};
-      document.querySelectorAll('[data-account-key]').forEach(select => {
-        mappings[select.getAttribute('data-account-key')] = select.value;
+      const removedKeys = [];
+      document.querySelectorAll('#accountRows tr').forEach(row => {
+        const select = row.querySelector('[data-account-key]');
+        if (!select) return;
+        const labelInput = row.querySelector('[data-account-label]');
+        let key = select.getAttribute('data-account-key');
+        if (labelInput) {
+          const oldKey = labelInput.getAttribute('data-old-key') || '';
+          key = CUSTOM_ACCOUNT_PREFIX + labelInput.value.trim();
+          if (oldKey && oldKey !== key) removedKeys.push(oldKey);
+          select.setAttribute('data-account-key', key);
+        }
+        mappings[key] = select.value;
       });
-      runServer('saveCompanyAccounts', { mappings: mappings }, load);
+      runServer('saveCompanyAccounts', { mappings: mappings, removedKeys: removedKeys }, load);
     });
+
+    $('addAccountMapping').addEventListener('click', addMappingRow);
 
     $('systemPanel').addEventListener('submit', event => {
       event.preventDefault();

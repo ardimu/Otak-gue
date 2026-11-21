@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --paper: #eef2ec; --sheet: #fff; --ink: #1d2a25; --muted: #5d6b65; --rule: #d2dcd1; --accent: #1f5c46; --danger: #a8322a; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; padding: 18px; background: var(--paper); color: var(--ink); font: 13px/1.45 "Segoe UI", Arial, sans-serif; }
+  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 14px; }
+  .bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .bar > div { flex: 1 1 160px; }
+  label { display: block; font-weight: 500; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; font: inherit; color: var(--ink); background: #fff; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { border: 1px solid transparent; border-radius: 3px; padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer; }
+  .primary { background: var(--accent); color: #fff; }
+  .secondary { background: #fff; border-color: #9fb0a4; color: var(--ink); }
+  .danger { background: #fff; border-color: #d99a96; color: var(--danger); }
+  .list { background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; max-height: 340px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { position: sticky; top: 0; text-align: left; padding: 7px 8px; background: #f4f7f3; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  td { padding: 6px 8px; border-bottom: 1px solid #e8eee7; vertical-align: middle; }
+  td.actions { white-space: nowrap; }
+  td.actions button { padding: 4px 9px; }
+  .muted { color: var(--muted); }
+  .pill { padding: 2px 7px; border-radius: 999px; background: #e2eee8; color: var(--accent); font-size: 11px; font-weight: 600; }
+  .pill.off { background: #f1f1f1; color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(15, 25, 35, .48); display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; background: #fff; border-radius: 6px; padding: 20px; }
+  .modal h2 { margin: 0 0 12px; font-size: 17px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .checkline { display: flex; align-items: center; gap: 8px; }
+  .checkline input { width: auto; }
+  .actions-row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  #message { white-space: pre-wrap; margin-top: 10px; min-height: 18px; color: var(--danger); }
+</style>
+</head>
+<body>
+  <h1>Parties (Customer or Supplier)</h1>
+  <p class="sub">Add, edit, or remove customers and suppliers. Deleting a party used in journals sets it to Inactive so old reports stay correct.</p>
+
+  <div class="bar">
+    <div><label for="search">Search</label><input id="search" type="search" placeholder="Name, ID, phone"></div>
+    <div style="flex:0 0 150px"><label for="filterType">Type</label><select id="filterType"><option value="">All</option><option>Customer</option><option>Supplier</option><option>Both</option></select></div>
+    <button class="primary" id="btnAdd" type="button">Add party</button>
+  </div>
+
+  <div class="list">
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Tax ID</th><th>Phone</th><th>Terms</th><th>Status</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div id="message" role="status" aria-live="polite"></div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal">
+      <h2 id="formTitle">Add party</h2>
+      <div class="grid">
+        <div style="grid-column:1/-1"><label for="fName">Name</label><input id="fName"></div>
+        <div><label for="fType">Type</label><select id="fType"><option>Customer</option><option>Supplier</option><option>Both</option></select></div>
+        <div><label for="fPhone">Phone number</label><input id="fPhone" placeholder="08xxxxxxxxxx"></div>
+        <div><label for="fTax">Tax ID (NPWP/NIK)</label><input id="fTax"></div>
+        <div><label for="fTerms">Payment terms (days)</label><input id="fTerms" type="number" min="0" value="0"></div>
+        <div style="grid-column:1/-1"><label for="fAddress">Address</label><input id="fAddress"></div>
+        <div class="checkline" style="grid-column:1/-1"><input id="fActive" type="checkbox" checked><label for="fActive" style="margin:0">Active</label></div>
+      </div>
+      <div class="actions-row">
+        <button class="secondary" id="btnCancel" type="button">Cancel</button>
+        <button class="primary" id="btnSave" type="button">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let parties = [];
+    let editingId = '';
+    let busy = false;
+
+    function say(text) { $('message').textContent = text || ''; }
+
+    function setBusy(value) {
+      busy = value;
+      $('btnAdd').disabled = value;
+      $('btnSave').disabled = value;
+      document.querySelectorAll('#rows button').forEach(button => { button.disabled = value; });
+    }
+
+    function render() {
+      const query = $('search').value.trim().toLowerCase();
+      const type = $('filterType').value;
+      const list = parties.filter(p =>
+        (!type || p.type === type) &&
+        (!query || [p.id, p.name, p.phone, p.taxId].some(v => String(v || '').toLowerCase().indexOf(query) >= 0)));
+      $('rows').innerHTML = list.length ? list.map(p =>
+        '<tr>' +
+          '<td>' + esc(p.id) + '</td>' +
+          '<td>' + esc(p.name) + '</td>' +
+          '<td>' + esc(p.type) + '</td>' +
+          '<td class="muted">' + esc(p.taxId) + '</td>' +
+          '<td>' + esc(p.phone) + '</td>' +
+          '<td>' + Number(p.terms || 0) + '</td>' +
+          '<td><span class="pill' + (p.active ? '' : ' off') + '">' + (p.active ? 'Active' : 'Inactive') + '</span></td>' +
+          '<td class="actions">' +
+            '<button class="secondary" data-act="edit" data-id="' + esc(p.id) + '">Edit</button> ' +
+            '<button class="danger" data-act="delete" data-id="' + esc(p.id) + '">Delete</button>' +
+          '</td>' +
+        '</tr>').join('')
+        : '<tr><td colspan="8" class="muted">No party found. Use Add party to create one.</td></tr>';
+      setBusy(false);
+    }
+
+    function load() {
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(list => { parties = list || []; say(''); render(); })
+        .withFailureHandler(error => { setBusy(false); say(error && error.message ? error.message : String(error)); })
+        .getPartiesForManager();
+    }
+
+    function openForm(party) {
+      editingId = party ? party.id : '';
+      $('formTitle').textContent = party ? 'Edit party' : 'Add party';
+      $('fName').value = party ? party.name : '';
+      $('fType').value = party ? party.type : 'Customer';
+      $('fPhone').value = party ? party.phone : '';
+      $('fTax').value = party ? party.taxId : '';
+      $('fTerms').value = party ? party.terms : 0;
+      $('fAddress').value = party ? party.address : '';
+      $('fActive').checked = party ? party.active : true;
+      $('overlay').hidden = false;
+      $('fName').focus();
+    }
+
+    $('btnAdd').addEventListener('click', () => openForm(null));
+    $('btnCancel').addEventListener('click', () => { $('overlay').hidden = true; });
+    $('search').addEventListener('input', render);
+    $('filterType').addEventListener('change', render);
+
+    $('rows').addEventListener('click', event => {
+      const button = event.target.closest('button[data-act]');
+      if (!button || busy) return;
+      const id = button.getAttribute('data-id');
+      const party = parties.find(p => p.id === id);
+      if (button.getAttribute('data-act') === 'edit') { openForm(party); return; }
+      if (!confirm('Delete ' + party.name + '? Parties used in journals are set to Inactive instead.')) return;
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(result => { say(result && result.message ? result.message : ''); load(); })
+        .withFailureHandler(error => { setBusy(false); say(error && error.message ? error.message : String(error)); })
+        .deleteParty(id);
+    });
+
+    $('btnSave').addEventListener('click', () => {
+      if (!$('fName').value.trim()) { say('Enter the name.'); return; }
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(result => { $('overlay').hidden = true; say(result && result.message ? result.message : 'Party saved.'); load(); })
+        .withFailureHandler(error => { setBusy(false); say(error && error.message ? error.message : String(error)); })
+        .saveParty({
+          id: editingId, name: $('fName').value, type: $('fType').value,
+          phone: $('fPhone').value, taxId: $('fTax').value, terms: $('fTerms').value,
+          address: $('fAddress').value, active: $('fActive').checked
+        });
+    });
+
+    load();
+  </script>
+</body>
+</html>

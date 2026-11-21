@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { padding: 26px; }
+    section { max-width: 760px; }
+    .eyebrow { color: var(--accent, #3457D5); font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 8px; }
+    h1 { margin: 0 0 6px; font-size: 21px; }
+    .sub { color: var(--muted, #64748B); margin: 0 0 20px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input[type="date"] { width: 100%; max-width: 240px; }
+    .checkline { display: flex; align-items: center; gap: 9px; margin: 12px 0; }
+    .checkline label { margin: 0; font-weight: 400; color: var(--muted, #64748B); }
+    .row { display: flex; justify-content: flex-end; margin-top: 20px; }
+    button:disabled { opacity: .6; cursor: default; }
+    pre {
+      white-space: pre-wrap;
+      margin: 18px 0 0;
+      padding: 14px 16px;
+      background: #F8FAFC;
+      border: 1px solid var(--rule, #E2E8F0);
+      border-radius: 9px;
+      min-height: 20px;
+      color: var(--ink, #111827);
+      font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
+    }
+    .error { color: var(--danger, #DC2626) !important; }
+  </style>
+</head>
+<body>
+  <section>
+    <div class="eyebrow"><?= lang === 'ID' ? 'Proses sistem' : 'System action' ?></div>
+    <h1 id="title"></h1>
+    <p class="sub" id="sub"></p>
+    <div id="fields"></div>
+    <div class="row"><button class="primary" id="run" type="button"></button></div>
+    <pre id="out"></pre>
+  </section>
+  <script>
+    const ACTION = <?!= JSON.stringify(action) ?>;
+    const LANG = <?!= JSON.stringify(lang) ?>;
+    const $ = id => document.getElementById(id);
+    const today = new Date().toISOString().slice(0, 10);
+    const T = {
+      'stock-movements': {
+        en: ['Process stock movements', 'Reads the Stock Movements sheet and creates drafts.', 'Process movements'],
+        id: ['Proses mutasi persediaan', 'Membaca lembar Stock Movements dan membuat draf.', 'Proses mutasi']
+      },
+      'stock-summary': {
+        en: ['Stock summary', 'Writes the Stock Summary sheet as at the chosen date.', 'Generate summary'],
+        id: ['Ringkasan persediaan', 'Menulis lembar Ringkasan Persediaan pada tanggal yang dipilih.', 'Buat ringkasan']
+      },
+      aging: {
+        en: ['AR and AP aging', 'Writes aging and open-items sheets as at the chosen date.', 'Generate aging'],
+        id: ['Umur piutang dan utang', 'Menulis lembar umur dan rincian terbuka pada tanggal yang dipilih.', 'Buat laporan umur']
+      },
+      install: {
+        en: ['Install / update system', 'Creates or updates sheets and default settings.', 'Run install'],
+        id: ['Instal / perbarui sistem', 'Membuat atau memperbarui lembar dan pengaturan bawaan.', 'Jalankan instalasi']
+      },
+      check: {
+        en: ['Check COA & settings', 'Diagnoses chart of accounts and required settings.', 'Run check'],
+        id: ['Periksa COA & pengaturan', 'Memeriksa daftar akun dan pengaturan yang diperlukan.', 'Jalankan pemeriksaan']
+      }
+    };
+    const t = (T[ACTION] || T.check)[LANG === 'ID' ? 'id' : 'en'];
+    $('title').textContent = t[0];
+    $('sub').textContent = t[1];
+    $('run').textContent = t[2];
+
+    if (ACTION === 'stock-summary' || ACTION === 'aging') {
+      $('fields').innerHTML = '<label for="asOf">' + (LANG === 'ID' ? 'Tanggal acuan (YYYY-MM-DD)' : 'As at (YYYY-MM-DD)') + '</label>' +
+        '<input type="date" id="asOf" value="' + today + '">';
+    }
+    if (ACTION === 'install') {
+      $('fields').innerHTML = '<div class="checkline"><input type="checkbox" id="replaceCoa">' +
+        '<label for="replaceCoa" style="margin:0;font-weight:400">' +
+        (LANG === 'ID' ? 'Ganti COA yang usang (lembar lama dibackup)' : 'Replace an outdated COA (old sheet is backed up)') +
+        '</label></div>';
+    }
+
+    function show(result) {
+      $('run').disabled = false;
+      $('out').className = '';
+      if (result && Array.isArray(result.issues)) {
+        $('out').textContent = result.issues.length
+          ? result.issues.join('\n')
+          : (LANG === 'ID' ? 'Pemeriksaan lolos. Tidak ada masalah.' : 'Check passed. No issues found.');
+        return;
+      }
+      if (result && result.success === false) {
+        $('out').className = 'error';
+        $('out').textContent = result.message || String(result);
+        return;
+      }
+      $('out').textContent = result && result.message ? result.message : (LANG === 'ID' ? 'Selesai.' : 'Done.');
+    }
+
+    function fail(error) {
+      $('run').disabled = false;
+      $('out').className = 'error';
+      $('out').textContent = error && error.message ? error.message : String(error);
+    }
+
+    function call(name, arg) {
+      $('run').disabled = true;
+      $('out').textContent = LANG === 'ID' ? 'Memproses...' : 'Working...';
+      const runner = google.script.run.withSuccessHandler(show).withFailureHandler(fail);
+      if (arg === undefined) runner[name](); else runner[name](arg);
+    }
+
+    $('run').addEventListener('click', function () {
+      if (ACTION === 'stock-movements') call('webProcessStockMovements');
+      else if (ACTION === 'stock-summary') call('webGenerateStockSummary', $('asOf').value);
+      else if (ACTION === 'aging') call('webGenerateAging', $('asOf').value);
+      else if (ACTION === 'install') call('webInstallSystem', { replaceCoa: $('replaceCoa').checked });
+      else call('webRunSetupCheck');
+    });
+  </script>
+</body>
+</html>

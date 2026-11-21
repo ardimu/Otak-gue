@@ -89,13 +89,14 @@
 
     <section class="doc" id="s1">
       <h2>1. How to use this guide</h2>
-      <p class="path">Open it from <code>Menu</code> &gt; <code>Accounting</code> &gt; <code>Setup</code> &gt; <code>User Guide / SOP (English)</code>.</p>
+      <p class="path">Open it from <code>Menu</code> &gt; <code>Accounting</code> &gt; <code>Setup</code> &gt; <code>User Guide / SOP</code>.</p>
       <ul>
         <li>Use the left contents list to jump to a section, or type a word in the search box to show only matching sections.</li>
         <li>Each section follows the same pattern: where to open it, what each control does, the steps, and the expected result.</li>
         <li>Words in bold are interface labels. Words in <code>code</code> are sheet names, field names, or system values.</li>
         <li>The guide never changes data. It is a reference only.</li>
       </ul>
+      <div class="callout info"><strong>Web app.</strong> The same menus and content are available in the Apps Script Web App. Open the deployed URL, sign in with Google, and use the top menu bar with dropdowns to move between pages. To restrict access, set <code>WEB_ALLOWED_EMAILS</code> in Script Properties to a comma-separated list of email addresses.</div>
       <div class="callout good"><strong>Reading convention</strong> A draft is not company data yet. A posted journal is final and affects reports. This distinction is the key to using the system safely.</div>
     </section>
 
@@ -143,7 +144,7 @@
         <tr><td>Due date</td><td>Payment or settlement date for AR and AP.</td><td>Used by aging reports. It updates automatically in assisted mode unless you change it.</td></tr>
         <tr><td>Reference</td><td>Invoice number, contract number, or bank reference.</td><td>Useful for tracing a journal to its source document.</td></tr>
         <tr><td>Description</td><td>Short description of the whole journal.</td><td>Shown in the Journal sheet and reports.</td></tr>
-        <tr><td>Customer or supplier</td><td>Name from <code>Master Data &gt; Parties</code>.</td><td>Use <strong>Add new</strong> to save a new party. An unknown name blocks saving until it is added.</td></tr>
+        <tr><td>Customer or supplier</td><td>Name from <code>Master Data &gt; Parties</code> or <code>Other support &gt; Parties (Customer or Supplier)</code>.</td><td>Use <strong>Add new</strong> to save a new party, including an optional phone number. An unknown name blocks saving until it is added.</td></tr>
         <tr><td>Journal type</td><td>Everyday, specialized, or period-end type.</td><td>Examples: General Journal, Sales Journal, Purchase Journal, Cash Receipt Journal, Cash Disbursement Journal, Payroll Journal, Asset Acquisition, Asset Disposal, Capital &amp; Equity, Loan &amp; Financing, Fund Transfer, Inventory Adjustment, Production Transfer, Adjusting Entry, Reversing Entry, Closing Entry, Opening Entry, Correction Entry, and Reclassification Entry.</td></tr>
         <tr><td>Supporting document</td><td>Optional document reference.</td><td>Keeps audit evidence linked to the journal.</td></tr>
       </table>
@@ -463,13 +464,13 @@
         <tr><th>Menu action</th><th>Purpose</th><th>How to use</th></tr>
         <tr>
           <td><strong>Generate Reports for a Month...</strong></td>
-          <td>Creates the main report package for one month, including General Ledger and financial statements.</td>
-          <td>Choose the month when prompted. Open the generated report sheet and review the mode banner.</td>
+          <td>Creates the chosen financial reports for one month. Choose <strong>All financial reports</strong> or <strong>Choose reports (checkboxes)</strong> to tick the reports you want.</td>
+          <td>Choose the month and the report selection. Only the selected sheets are written and shown. The choice is remembered for Refresh.</td>
         </tr>
         <tr>
           <td><strong>Refresh Reports (same month)</strong></td>
-          <td>Rebuilds the last generated month after new journals are posted.</td>
-          <td>Use it after posting corrections or late journals. The same month is reused.</td>
+          <td>Rebuilds the same reports after new journals are posted.</td>
+          <td>Use it after posting corrections or late journals. The month and the saved report selection are reused.</td>
         </tr>
         <tr>
           <td><strong>AR and AP Aging...</strong></td>
@@ -496,20 +497,35 @@
       <p>Use the four tabs:</p>
       <ul>
         <li><strong>Profile.</strong> Company identity and logo. Choose <strong>Save logo</strong>, <strong>Remove logo</strong>, or <strong>Save profile</strong>.</li>
-        <li><strong>Accounting.</strong> Business type, fiscal year start, and default account mappings. Choose <strong>Save accounting settings</strong>.</li>
-        <li><strong>Accounts.</strong> Default accounts used by generated journals. Choose <strong>Save default accounts</strong>.</li>
+        <li><strong>Accounting.</strong> Business type, fiscal year start, and accounting policy settings. Choose <strong>Save accounting settings</strong>.</li>
+        <li><strong>Accounts.</strong> Default accounts used by generated journals. Choose <strong>Add default account</strong> to create an additional mapping, then edit its name and account or use <strong>Remove</strong> to delete it. Choose <strong>Save default accounts</strong> to apply changes. Every built-in and additional account must exist and be active in the COA; the Go Live checklist also checks them.</li>
         <li><strong>System.</strong> Mode, Go Live checklist, period and bank controls. Choose <strong>Save system settings</strong>.</li>
       </ul>
       <p><strong>Reset Practice Data</strong> clears practice-only data. <strong>Go Live</strong> opens a confirmation that requires the exact company name and a completed checklist.</p>
 
-      <h3>9.2 Install / Update System</h3>
-      <p>Creates or updates the required sheets, headers, and default settings. It is safe to rerun after an upgrade. It does not delete posted journals.</p>
+      <h3>9.2 Update</h3>
+      <p>Opens the two maintenance tools: <strong>Install / Update System</strong> and <strong>Check COA &amp; Settings</strong>.</p>
 
-      <h3>9.3 Check COA &amp; Settings</h3>
-      <p>Runs diagnostics on the chart of accounts and required settings. Fix every reported issue before generating reports or moving to LIVE.</p>
+      <h3>9.3 Install / Update System</h3>
+      <p>Creates or updates the required sheets, headers, and default settings. It is safe to rerun after an upgrade. It does not delete posted journals. It also adds the <code>Phone</code> column to the <code>Parties</code> sheet.</p>
 
-      <h3>9.4 User Guide / SOP (English)</h3>
-      <p>Opens this guide. Add it to your translated copy by replacing the English text while keeping the same section order and workflow steps.</p>
+      <h3>9.4 Check COA &amp; Settings</h3>
+      <p>Runs diagnostics on the chart of accounts and required settings, including additional default account mappings. Fix every reported issue before generating reports or moving to LIVE.</p>
+
+      <h3>9.5 Language</h3>
+      <p>Switches the interface and dialogs between <strong>English</strong> and <strong>Bahasa</strong>. There is no reset button.</p>
+
+      <h3>9.6 User Guide / SOP</h3>
+      <p>Opens this guide. A translated copy keeps the same section order and workflow steps.</p>
+
+      <h3>9.7 Other support</h3>
+      <p class="path">Open from <code>Other support</code> &gt; <code>Parties (Customer or Supplier)</code>.</p>
+      <p>Use this popup to maintain the party list without editing the sheet directly. The list shows ID, Name, Type, Tax ID, Phone, Terms, and Status. Search matches name, ID, phone, or tax ID; <strong>Type</strong> filters Customer, Supplier, or Both.</p>
+      <ul>
+        <li><strong>Add party.</strong> Enter Name, Type, Phone number, Tax ID (NPWP/NIK), Payment terms (days), Address, and Active. The phone number is also available in the journal form's <strong>Add new</strong> dialog.</li>
+        <li><strong>Edit.</strong> Opens the same form for an existing party. Keep <strong>Active</strong> checked when the party can still be selected in journals.</li>
+        <li><strong>Delete.</strong> An unused party is removed. A party already used in a journal is set to <strong>Inactive</strong> instead, so historical reports remain correct. Inactive parties stay in the list but cannot be selected for new journals.</li>
+      </ul>
     </section>
 
     <section class="doc" id="s10">
@@ -560,13 +576,22 @@
         <li>Review and post all generated drafts.</li>
         <li>Generate reports for the month, then set the lock date after approval.</li>
       </ol>
+
+      <h3>10.6 Maintain the party list</h3>
+      <ol>
+        <li>Open <strong>Other support</strong> &gt; <strong>Parties (Customer or Supplier)</strong>.</li>
+        <li>Search by name, ID, phone, or tax ID, or filter by Type.</li>
+        <li>Choose <strong>Add party</strong> to create a customer or supplier, including the phone number.</li>
+        <li>Choose <strong>Edit</strong> to correct contact details, terms, type, or status.</li>
+        <li>Choose <strong>Delete</strong> to remove an unused party, or accept that a referenced party becomes <strong>Inactive</strong>.</li>
+      </ol>
     </section>
 
     <section class="doc" id="s11">
       <h2>11. Messages and troubleshooting</h2>
       <table>
         <tr><th>Message or symptom</th><th>Meaning</th><th>What to do</th></tr>
-        <tr><td>Name is not in the Parties list</td><td>The Customer or Supplier has not been saved in Master Data.</td><td>Choose <strong>Add new</strong> in the journal form or add the party in Master Data first.</td></tr>
+        <tr><td>Name is not in the Parties list</td><td>The Customer or Supplier has not been saved, or is Inactive.</td><td>Choose <strong>Add new</strong> in the journal form, add the party from <strong>Other support &gt; Parties (Customer or Supplier)</strong>, or set the existing party to Active.</td></tr>
         <tr><td>Missing Customer / Supplier</td><td>AR or AP lines have no party assigned.</td><td>Choose <strong>Review Again</strong> to fix it, or <strong>Post Anyway</strong> if General Ledger only is acceptable.</td></tr>
         <tr><td>Debit and credit must be balanced</td><td>At least two lines are required and totals do not match.</td><td>Add or correct lines until the difference is zero.</td></tr>
         <tr><td>Journal is locked</td><td>The date is on or before the lock date.</td><td>Use a later date or have the lock cleared by an authorized user.</td></tr>

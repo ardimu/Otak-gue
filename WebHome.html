@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    [hidden] { display: none !important; }
+    body { padding: 26px; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .eyebrow { color: var(--accent, #3457D5); font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 6px 0 5px; font-size: 24px; }
+    .sub { margin: 0; color: var(--muted, #64748B); font-size: 12.5px; }
+    .hero { display: flex; align-items: center; gap: 18px; }
+    .hero-art { width: 132px; height: 68px; flex: 0 0 132px; }
+    .head-actions { display: flex; align-items: center; gap: 9px; }
+    .period-pill { background: var(--sheet, #fff); border: 1px solid var(--rule, #E2E8F0); border-radius: 999px; padding: 8px 13px; font-size: 12px; font-weight: 600; color: var(--ink, #111827); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { background: var(--sheet, #fff); border: 1px solid var(--rule, #E2E8F0); border-radius: 12px; padding: 15px 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+    .kpi-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .kpi-label { color: var(--muted, #64748B); font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .kpi-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+    .kpi-value { margin-top: 11px; font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
+    .kpi-sub { margin-top: 4px; color: var(--muted, #64748B); font-size: 11px; }
+    .blue .kpi-icon { background: #EEF2FF; color: #3457D5; }
+    .violet .kpi-icon { background: #F5F3FF; color: #7C3AED; }
+    .indigo .kpi-icon { background: #EEF2FF; color: #4338CA; }
+    .amber .kpi-icon { background: #FFFBEB; color: #B45309; }
+    .rose .kpi-icon { background: #FFF1F2; color: #E11D48; }
+    .slate .kpi-icon { background: #F1F5F9; color: #475569; }
+    .negative { color: var(--danger, #DC2626) !important; }
+    .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .profile-list { margin: 0; }
+    .profile-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rule, #E2E8F0); font-size: 12px; }
+    .profile-row:last-child { border-bottom: 0; }
+    .profile-row span { color: var(--muted, #64748B); }
+    .profile-row strong { text-align: right; font-weight: 600; }
+    .panel { position: relative; overflow: hidden; background: var(--sheet, #fff); border: 1px solid var(--rule, #E2E8F0); border-radius: 12px; padding: 18px 20px; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+    .panel::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #3457D5, #7C3AED 60%, #B45309); border-radius: 0 0 50% 50% / 0 0 5px 5px; }
+    .panel h3 { margin: 0 0 4px; font-size: 14px; }
+    .panel-note { margin: 0 0 16px; color: var(--muted, #64748B); font-size: 11.5px; }
+    .bar-row { margin-bottom: 13px; }
+    .bar-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+    .bar-head strong { font-size: 12.5px; }
+    .bar-track { height: 7px; margin-top: 7px; border-radius: 999px; background: #F1F5F9; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 999px; }
+    .bar-fill.income { background: #3457D5; }
+    .bar-fill.expense { background: #7C3AED; }
+    .bar-fill.net { background: #B45309; }
+    .checks { list-style: none; margin: 0; padding: 0; }
+    .check { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--rule, #E2E8F0); font-size: 12px; line-height: 1.45; }
+    .check:last-child { border-bottom: 0; }
+    .dot { width: 8px; height: 8px; flex: 0 0 8px; margin-top: 5px; border-radius: 50%; background: var(--accent, #3457D5); }
+    .dot.warn { background: #B45309; }
+    .dot.danger { background: var(--danger, #DC2626); }
+    .recent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .recent-head h3 { margin: 0; font-size: 14px; }
+    .recent-head span { color: var(--muted, #64748B); font-size: 11.5px; }
+    table { width: 100%; }
+    th, td { padding: 9px 10px !important; }
+    td.num, th.num { text-align: right; }
+    .muted { color: var(--muted, #64748B); }
+    .type-pill { background: #F1F5F9; color: #475569; border-radius: 999px; padding: 3px 8px; font-size: 10.5px; }
+    .empty { padding: 18px; text-align: center; color: var(--muted, #64748B); font-size: 12px; }
+    .quick { margin-top: 16px; }
+    .quick-title { margin: 0 0 10px; color: var(--muted, #64748B); font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .quick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    a.quick-card { display: flex; align-items: center; gap: 10px; padding: 12px 13px; background: var(--sheet, #fff); border: 1px solid var(--rule, #E2E8F0); border-radius: 10px; color: inherit; text-decoration: none; font-size: 12px; font-weight: 600; }
+    a.quick-card:hover { border-color: var(--accent, #3457D5); color: var(--accent, #3457D5); }
+    .quick-icon { width: 27px; height: 27px; border-radius: 7px; background: var(--accent-soft, #EEF2FF); color: var(--accent, #3457D5); display: grid; place-items: center; font-size: 9px; font-weight: 800; }
+    .error-box { margin-bottom: 16px; }
+    .loading { display: flex; align-items: center; gap: 12px; padding: 30px; background: var(--sheet, #fff); border: 1px solid var(--rule, #E2E8F0); border-radius: 12px; color: var(--muted, #64748B); }
+    .spinner { width: 18px; height: 18px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="page-head">
+    <div class="hero">
+      <div>
+        <div class="eyebrow"><?= lang === 'ID' ? 'Ringkasan kerja' : 'Workspace overview' ?></div>
+        <h1><?= lang === 'ID' ? 'Selamat datang' : 'Welcome' ?></h1>
+        <p class="sub" id="subtitle"><?= lang === 'ID' ? 'Memuat data keuangan terbaru…' : 'Loading the latest financial data…' ?></p>
+      </div>
+      <svg class="hero-art" viewBox="0 0 140 70" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M4 52 C28 8 52 64 76 26 S118 6 136 34" fill="none" stroke="#3457D5" stroke-width="3" stroke-linecap="round"/>
+        <path d="M4 62 C32 30 58 70 84 42 S120 28 136 50" fill="none" stroke="#B45309" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        <rect x="18" y="46" width="9" height="18" rx="4" fill="#EEF2FF"/>
+        <rect x="34" y="36" width="9" height="28" rx="4" fill="#EDE9FE"/>
+        <rect x="50" y="42" width="9" height="22" rx="4" fill="#EEF2FF"/>
+        <circle cx="76" cy="26" r="5" fill="#7C3AED"/>
+        <circle cx="136" cy="34" r="4" fill="#3457D5"/>
+      </svg>
+    </div>
+    <div class="head-actions">
+      <span class="period-pill" id="period">—</span>
+      <button type="button" class="primary" id="refresh"><?= lang === 'ID' ? 'Muat ulang' : 'Refresh' ?></button>
+    </div>
+  </div>
+
+  <div class="callout danger error-box" id="errorBox" hidden></div>
+
+  <div class="loading" id="loading">
+    <span class="spinner"></span>
+    <span><?= lang === 'ID' ? 'Menghitung saldo, laba rugi, dan umur piutang…' : 'Calculating balances, profit and loss, and aging…' ?></span>
+  </div>
+
+  <div id="dashboard" hidden>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="panels">
+      <section class="panel">
+        <h3><?= lang === 'ID' ? 'Kinerja bulan ini' : 'This month at a glance' ?></h3>
+        <p class="panel-note" id="performanceNote"></p>
+        <div id="bars"></div>
+      </section>
+      <section class="panel">
+        <h3><?= lang === 'ID' ? 'Kesehatan buku' : 'Book health' ?></h3>
+        <p class="panel-note"><?= lang === 'ID' ? 'Pemeriksaan otomatis dari data yang sudah diposting.' : 'Automatic checks from posted data.' ?></p>
+        <ul class="checks" id="checks"></ul>
+      </section>
+      <section class="panel">
+        <h3><?= lang === 'ID' ? 'Profil perusahaan' : 'Company profile' ?></h3>
+        <p class="panel-note"><?= lang === 'ID' ? 'Identitas dan pengaturan utama dari Settings.' : 'Identity and core settings from Settings.' ?></p>
+        <div class="profile-list" id="profile"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="recent-head">
+        <h3><?= lang === 'ID' ? 'Jurnal terbaru' : 'Recent journals' ?></h3>
+        <span><?= lang === 'ID' ? '6 transaksi terakhir yang diposting' : 'Last 6 posted transactions' ?></span>
+      </div>
+      <div id="recent"></div>
+    </section>
+
+    <div class="quick">
+      <p class="quick-title"><?= lang === 'ID' ? 'Akses cepat' : 'Quick access' ?></p>
+      <div class="quick-grid">
+        <a class="quick-card" href="?page=journal-new"><span class="quick-icon">JV</span><?= lang === 'ID' ? 'Jurnal Baru' : 'New Journal' ?></a>
+        <a class="quick-card" href="?page=bank-import"><span class="quick-icon">BI</span><?= lang === 'ID' ? 'Impor Bank' : 'Bank Import' ?></a>
+        <a class="quick-card" href="?page=parties"><span class="quick-icon">PY</span><?= lang === 'ID' ? 'Pihak' : 'Parties' ?></a>
+        <a class="quick-card" href="?page=reports-monthly"><span class="quick-icon">RP</span><?= lang === 'ID' ? 'Laporan' : 'Reports' ?></a>
+        <a class="quick-card" href="?page=system-check"><span class="quick-icon">CK</span><?= lang === 'ID' ? 'Periksa Sistem' : 'Check System' ?></a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LANG = <?!= JSON.stringify(lang) ?>;
+    const ID = LANG === 'ID';
+    const T = {
+      cash: [ID ? 'Kas & Bank' : 'Cash & Bank', 'KS'],
+      income: [ID ? 'Pendapatan' : 'Revenue', 'PN'],
+      net: [ID ? 'Laba Bersih' : 'Net Profit', 'LB'],
+      ar: [ID ? 'Piutang' : 'Receivables', 'AR'],
+      ap: [ID ? 'Utang' : 'Payables', 'AP'],
+      drafts: [ID ? 'Draf Jurnal' : 'Journal Drafts', 'DF']
+    };
+    const $ = function (id) { return document.getElementById(id); };
+    let state = null;
+
+    function esc(value) {
+      return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function money(value, compact) {
+      const code = (state && state.currency) || 'IDR';
+      try {
+        return new Intl.NumberFormat(ID ? 'id-ID' : 'en-US', {
+          style: 'currency', currency: code, currencyDisplay: 'narrowSymbol',
+          maximumFractionDigits: 0, notation: compact ? 'compact' : 'standard'
+        }).format(Number(value) || 0);
+      } catch (e) {
+        return code + ' ' + (Number(value) || 0).toLocaleString();
+      }
+    }
+    function monthLabel(period) {
+      const text = String(period || '');
+      if (!/^\d{6}$/.test(text)) return text || '—';
+      return new Intl.DateTimeFormat(ID ? 'id-ID' : 'en-US', { month: 'long', year: 'numeric' })
+        .format(new Date(Number(text.slice(0, 4)), Number(text.slice(4)) - 1, 1));
+    }
+    function kpi(key, value, sub, tone) {
+      const label = T[key];
+      const cls = value < 0 ? 'negative' : '';
+      return '<div class="kpi ' + tone + '">' +
+        '<div class="kpi-top"><span class="kpi-label">' + esc(label[0]) + '</span><span class="kpi-icon">' + label[1] + '</span></div>' +
+        '<div class="kpi-value ' + cls + '">' + esc(money(value, true)) + '</div>' +
+        '<div class="kpi-sub">' + esc(sub) + '</div></div>';
+    }
+    function bar(label, value, max, tone) {
+      const width = max > 0 ? Math.min(100, Math.max(0, Math.abs(value) / max * 100)) : 0;
+      return '<div class="bar-row"><div class="bar-head"><span>' + esc(label) + '</span><strong>' + esc(money(value)) + '</strong></div>' +
+        '<div class="bar-track"><div class="bar-fill ' + tone + '" style="width:' + width.toFixed(1) + '%"></div></div></div>';
+    }
+    function render(data) {
+      $('loading').hidden = true;
+      $('errorBox').hidden = true;
+      if (!data || data.success === false) {
+        $('errorBox').textContent = data && data.message ? data.message : (ID ? 'Gagal memuat dashboard.' : 'Could not load the dashboard.');
+        $('errorBox').hidden = false;
+        return;
+      }
+      state = data;
+      $('period').textContent = monthLabel(data.period);
+      $('subtitle').textContent = (data.company ? data.company + ' · ' : '') +
+        (data.mode === 'LIVE' ? (ID ? 'Mode LIVE' : 'LIVE mode') : (ID ? 'Mode PRACTICE' : 'PRACTICE mode')) +
+        (data.updatedAt ? ' · ' + (ID ? 'Diperbarui ' : 'Updated ') + new Date(data.updatedAt).toLocaleTimeString(ID ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : '');
+
+      $('kpis').innerHTML =
+        kpi('cash', data.cash, ID ? 'Saldo kas dan bank' : 'Cash and bank balance', 'blue') +
+        kpi('income', data.income, ID ? 'Bulan ini · YTD ' + money(data.incomeYtd, true) : 'This month · YTD ' + money(data.incomeYtd, true), 'violet') +
+        kpi('net', data.net, ID ? 'Bulan ini' : 'This month', 'indigo') +
+        kpi('ar', data.ar, ID ? 'Jatuh tempo ' + money(data.arOverdue, true) : 'Overdue ' + money(data.arOverdue, true), 'amber') +
+        kpi('ap', data.ap, ID ? 'Jatuh tempo ' + money(data.apOverdue, true) : 'Overdue ' + money(data.apOverdue, true), 'rose') +
+        kpi('drafts', Number(data.drafts) || 0, ID ? 'Menunggu diposting' : 'Awaiting posting', 'slate');
+
+      $('performanceNote').textContent = ID
+        ? 'Perbandingan pemasukan, pengeluaran, dan laba bersih untuk ' + monthLabel(data.period) + '. YTD ' + monthLabel(data.fiscalFrom) + ' – ' + monthLabel(data.period) + '.'
+        : 'Income, expense, and net profit for ' + monthLabel(data.period) + '. YTD ' + monthLabel(data.fiscalFrom) + ' – ' + monthLabel(data.period) + '.';
+      const max = Math.max(Math.abs(data.income), Math.abs(data.expense), Math.abs(data.net), 1);
+      $('bars').innerHTML =
+        bar(ID ? 'Pemasukan' : 'Income', data.income, max, 'income') +
+        bar(ID ? 'Pengeluaran' : 'Expense', data.expense, max, 'expense') +
+        bar(ID ? 'Laba bersih' : 'Net profit', data.net, max, 'net');
+
+      $('checks').innerHTML = (data.checks || []).map(function (item) {
+        return '<li class="check"><span class="dot ' + esc(item.level) + '"></span><span>' + esc(item.text) + '</span></li>';
+      }).join('');
+
+      const p = data.profile || {};
+      const profileRows = [
+        [ID ? 'Nama company' : 'Company', data.company],
+        [ID ? 'Nama legal' : 'Legal name', p.legalName],
+        ['NPWP', p.npwp],
+        ['NIB', p.nib],
+        [ID ? 'Jenis usaha' : 'Business type', p.businessType],
+        [ID ? 'Telepon' : 'Phone', p.phone],
+        ['Email', p.email],
+        [ID ? 'Alamat' : 'Address', p.address]
+      ].filter(function (row) { return row[1]; }).map(function (row) {
+        return '<div class="profile-row"><span>' + esc(row[0]) + '</span><strong>' + esc(row[1]) + '</strong></div>';
+      }).join('');
+      $('profile').innerHTML = (profileRows || '<div class="empty">' + (ID ? 'Profil belum diisi.' : 'No profile details yet.') + '</div>') +
+        '<div class="profile-row"><span>' + (ID ? 'Aksi' : 'Action') + '</span><strong><a href="?page=settings-profile">' + (ID ? 'Edit profil' : 'Edit profile') + '</a></strong></div>';
+
+      if (!data.recent || !data.recent.length) {
+        $('recent').innerHTML = '<div class="empty">' + (ID ? 'Belum ada jurnal yang diposting.' : 'No posted journals yet.') + '</div>';
+      } else {
+        let rows = '';
+        data.recent.forEach(function (item) {
+          rows += '<tr><td>' + esc(item.date) + '</td><td><strong>' + esc(item.journalId) + '</strong></td>' +
+            '<td><span class="type-pill">' + esc(item.journalType || '—') + '</span></td>' +
+            '<td>' + esc(item.description || item.party || '—') + '</td>' +
+            '<td class="muted">' + esc(item.party || '—') + '</td>' +
+            '<td class="num">' + esc(money(item.debit)) + '</td></tr>';
+        });
+        $('recent').innerHTML = '<table><thead><tr><th>' + (ID ? 'Tanggal' : 'Date') + '</th><th>' + (ID ? 'ID Jurnal' : 'Journal ID') + '</th><th>' + (ID ? 'Jenis' : 'Type') + '</th><th>' + (ID ? 'Keterangan' : 'Description') + '</th><th>' + (ID ? 'Pihak' : 'Party') + '</th><th class="num">' + (ID ? 'Jumlah' : 'Amount') + '</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      }
+      $('dashboard').hidden = false;
+    }
+    function fail(error) {
+      $('loading').hidden = true;
+      $('errorBox').textContent = error && error.message ? error.message : String(error);
+      $('errorBox').hidden = false;
+    }
+    function load() {
+      $('loading').hidden = false;
+      $('dashboard').hidden = true;
+      $('errorBox').hidden = true;
+      google.script.run.withSuccessHandler(render).withFailureHandler(fail).webGetDashboard();
+    }
+    $('refresh').addEventListener('click', load);
+    document.addEventListener('DOMContentLoaded', load);
+  </script>
+</body>
+</html>

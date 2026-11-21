@@ -172,9 +172,10 @@
         <h2>Default account mapping</h2>
         <p class="note">Every account must exist and be active in the COA.</p>
         <table>
-          <thead><tr><th>Setting</th><th>Account</th></tr></thead>
+          <thead><tr><th>Setting</th><th>Account</th><th></th></tr></thead>
           <tbody id="accountRows"></tbody>
         </table>
+        <div class="row" style="margin-top:12px"><button class="secondary" id="addAccountMapping" type="button">Add default account</button></div>
       </div>
       <div class="actions"><button class="primary" type="submit">Save default accounts</button></div>
     </form>
@@ -224,6 +225,48 @@
   <script>
     let DATA = null;
     const $ = id => document.getElementById(id);
+    const CUSTOM_ACCOUNT_PREFIX = 'Account: Custom: ';
+
+    function accountOptions() {
+      const first = DATA && DATA.accounts.find(account => account.options && account.options.length);
+      return first ? first.options.map(o => ({ value: o.code, text: o.code + ' - ' + o.name })) : [];
+    }
+
+    function accountSelect(key, code) {
+      const select = document.createElement('select');
+      select.setAttribute('data-account-key', key);
+      fillSelect(select, accountOptions(), code, 'No active accounts');
+      return select;
+    }
+
+    function removeButton(onClick) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'danger';
+      button.textContent = 'Remove';
+      button.addEventListener('click', onClick);
+      return button;
+    }
+
+    function addMappingRow() {
+      const tr = document.createElement('tr');
+      const nameCell = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Mapping name';
+      input.setAttribute('data-account-label', '');
+      nameCell.appendChild(input);
+      const selectCell = document.createElement('td');
+      selectCell.className = 'select-cell';
+      selectCell.appendChild(accountSelect('', ''));
+      const actionCell = document.createElement('td');
+      actionCell.appendChild(removeButton(() => tr.remove()));
+      tr.appendChild(nameCell);
+      tr.appendChild(selectCell);
+      tr.appendChild(actionCell);
+      $('accountRows').appendChild(tr);
+      input.focus();
+    }
 
     function toast(message, isError) {
       const box = $('toast');
@@ -313,15 +356,24 @@
       data.accounts.forEach(account => {
         const tr = document.createElement('tr');
         const nameCell = document.createElement('td');
-        nameCell.textContent = account.label;
+        if (account.custom) {
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = account.label;
+          input.setAttribute('data-account-label', '');
+          input.setAttribute('data-old-key', account.key);
+          nameCell.appendChild(input);
+        } else nameCell.textContent = account.label;
         const selectCell = document.createElement('td');
         selectCell.className = 'select-cell';
-        const select = document.createElement('select');
-        select.setAttribute('data-account-key', account.key);
-        fillSelect(select, account.options.map(o => ({ value: o.code, text: o.code + ' - ' + o.name })), account.code, 'No active accounts');
-        selectCell.appendChild(select);
+        selectCell.appendChild(accountSelect(account.key, account.code));
+        const actionCell = document.createElement('td');
+        if (account.custom) {
+          actionCell.appendChild(removeButton(() => runServer('removeCompanyAccountMapping', account.key, load)));
+        }
         tr.appendChild(nameCell);
         tr.appendChild(selectCell);
+        tr.appendChild(actionCell);
         body.appendChild(tr);
       });
 
@@ -445,11 +497,24 @@
     $('accountsPanel').addEventListener('submit', event => {
       event.preventDefault();
       const mappings = {};
-      document.querySelectorAll('[data-account-key]').forEach(select => {
-        mappings[select.getAttribute('data-account-key')] = select.value;
+      const removedKeys = [];
+      document.querySelectorAll('#accountRows tr').forEach(row => {
+        const select = row.querySelector('[data-account-key]');
+        if (!select) return;
+        const labelInput = row.querySelector('[data-account-label]');
+        let key = select.getAttribute('data-account-key');
+        if (labelInput) {
+          const oldKey = labelInput.getAttribute('data-old-key') || '';
+          key = CUSTOM_ACCOUNT_PREFIX + labelInput.value.trim();
+          if (oldKey && oldKey !== key) removedKeys.push(oldKey);
+          select.setAttribute('data-account-key', key);
+        }
+        mappings[key] = select.value;
       });
-      runServer('saveCompanyAccounts', { mappings: mappings }, load);
+      runServer('saveCompanyAccounts', { mappings: mappings, removedKeys: removedKeys }, load);
     });
+
+    $('addAccountMapping').addEventListener('click', addMappingRow);
 
     $('systemPanel').addEventListener('submit', event => {
       event.preventDefault();
