@@ -234,14 +234,15 @@ function processStockMovements(options) {
     const errors = eng.res.filter(o => o.status === 'ERROR').length;
     return { done: eng.res.filter(o => o.status === 'READY').length, created: created, errors: errors, batchId: batchId };
   });
-  const message = r.done + tr_(' movement(s) processed.\n', ' pergerakan diproses.\n') +
-    r.created + tr_(' draft journal(s) created', ' jurnal draf dibuat') +
-    (r.created ? tr_(' (batch ', ' (batch ') + r.batchId + ')' : '') + tr_('.\n', '.\n') +
-    (r.errors ? r.errors + tr_(' row(s) have an error. Read column M of the Stock Movements sheet, fix them, and process again.',
-      ' baris memiliki kesalahan. Baca kolom M pada lembar Stock Movements, perbaiki, lalu proses kembali.') : tr_('No errors.', 'Tidak ada kesalahan.')) +
-    (r.created ? tr_('\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.',
-      '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : '');
-  if (web) return { success: true, result: r, message: message };
+    const message = r.done + tr_(' movement(s) processed.\n', ' pergerakan diproses.\n') +
+      r.created + tr_(' draft journal(s) created', ' jurnal draf dibuat') +
+      (r.created ? tr_(' (batch ', ' (batch ') + r.batchId + ')' : '') + tr_('.\n', '.\n') +
+      (r.errors ? r.errors + tr_(' row(s) have an error. Read column M of the Stock Movements sheet, fix them, and process again.',
+        ' baris memiliki kesalahan. Baca kolom M pada lembar Stock Movements, perbaiki, lalu proses kembali.') : tr_('No errors.', 'Tidak ada kesalahan.')) +
+      (r.created ? tr_('\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.',
+        '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : '');
+    if (r.created) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {} }
+    if (web) return { success: true, result: r, message: message };
   const ui = SpreadsheetApp.getUi();
   ui.alert(tr_('Stock movements processed', 'Pergerakan persediaan diproses'), message, ui.ButtonSet.OK);
 }

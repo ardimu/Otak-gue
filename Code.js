@@ -882,6 +882,7 @@ function saveJournal(payload) {
     });
     replaceRows_(sheet, oldRows, rows, journalId);
 
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     return {
       success: true,
       journalId: journalId,
@@ -1157,6 +1158,7 @@ function deleteDraft(journalId) {
     }
     found.rowNumbers.slice().sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
     SpreadsheetApp.flush();
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     return { success: true, journalId: id, message: tr_(`Draft ${id} deleted.`, `Draf ${id} telah dihapus.`) };
   } finally {
     lock.releaseLock();
@@ -1195,6 +1197,7 @@ function postDraftFromManagement(journalId) {
       sheet.getRange(found.rowNumbers[i], 1, 1, JOURNAL_HEADERS.length).setValues([r]);
     });
     SpreadsheetApp.flush();
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     return { success: true, journalId: id, message: tr_(`Journal ${id} posted.`, `Jurnal ${id} telah diposting.`) };
   } finally {
     lock.releaseLock();
@@ -1240,6 +1243,7 @@ function postDraftList(journalIds) {
     });
     if (updates.length) writeDraftPosts_(sheet, updates);
     SpreadsheetApp.flush();
+    if (posted.length) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {} }
     if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
     return { posted: posted, failures: failures, missingPartyLines: missingPartyLines,
       message: tr_(posted.length + ' posted, ' + failures.length + ' failed.', posted.length + ' diposting, ' + failures.length + ' gagal.') };

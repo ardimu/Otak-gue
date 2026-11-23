@@ -32,6 +32,7 @@ const WEB_PAGES = {
     vars: function () { return { reportKeys: 'gl' }; }
   },
   'reports-aging': { en: 'AR & AP Aging', id: 'Umur Piutang & Utang', file: 'WebAction', idFile: 'WebAction', action: 'aging', dashboard: true },
+  'export-excel': { en: 'Export to Excel', id: 'Ekspor ke Excel', file: 'WebAction', idFile: 'WebAction', action: 'export-excel', dashboard: true },
   'settings-profile': { en: 'Company Profile', id: 'Profil Perusahaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'profile', dashboard: true },
   'settings-accounting': { en: 'Accounting Settings', id: 'Pengaturan Akuntansi', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounting', dashboard: true },
   'settings-accounts': { en: 'Default Accounts', id: 'Akun Bawaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounts', dashboard: true },
@@ -68,7 +69,8 @@ const WEB_NAV = [
       },
       {
         en: 'Other Support', id: 'Dukungan Lain', items: [
-          ['parties', 'Parties', 'Pihak', 'PY']
+          ['parties', 'Parties', 'Pihak', 'PY'],
+          ['export-excel', 'Export to Excel', 'Ekspor ke Excel', 'EX']
         ]
       }
     ]
@@ -270,6 +272,9 @@ function webDeniedHtml_() {
 
 function webGetDashboard() {
   try {
+    const cached = webCacheGet_(WEB_CACHE_DASH);
+    if (cached) return cached;
+
     const settings = readSettings_();
     const selected = getReportSelection_();
     const tz = Session.getScriptTimeZone() || 'Asia/Jakarta';
@@ -282,126 +287,147 @@ function webGetDashboard() {
     const asOf = new Date(year, month, 0, 12, 0, 0);
 
     const coa = readCoa_();
-    const posted = loadPostedForReports_();
-    const company = String(settings['Company Name'] || '');
-    const currency = String(settings['Currency'] || 'IDR').trim() || 'IDR';
-    const reports = computeReports_(posted, coa, period, fiscalStart, { company: company, label: '' });
-
     const coaMap = new Map(coa.map(a => [String(a.code).trim(), a]));
-    const cashCodes = coa.filter(a => a.group === 'Cash & Cash Equivalents').map(a => String(a.code).trim());
-    const cash = r2_(posted.reduce((sum, row) => {
-      return cashCodes.indexOf(String(row.code).trim()) >= 0 && row.period <= period ? sum + row.debit - row.credit : sum;
-    }, 0));
-
+    const cashCodes = new Set(coa.filter(a => a.group === 'Cash & Cash Equivalents').map(a => String(a.code).trim()));
     const section = new Map(coa.map(a => [String(a.code).trim(), sectionOf_(a)]));
     const inflowSections = ['REV', 'CONTRA', 'OI'];
     const outflowSections = ['COS', 'OPEX', 'OX', 'TAX'];
-    const flow = (sections, from, to) => r2_(posted.reduce((sum, row) => {
-      if (row.period < from || row.period > to || NO_FLOW.indexOf(row.type) >= 0) return sum;
-      if (sections.indexOf(section.get(String(row.code).trim())) < 0) return sum;
-      const sign = inflowSections.indexOf(section.get(String(row.code).trim())) >= 0 ? -1 : 1;
-      return sum + sign * (row.debit - row.credit);
-    }, 0));
-
-    const income = flow(inflowSections, period, period);
-    const expense = flow(outflowSections, period, period);
-    const net = r2_(income - expense);
-    const incomeYtd = flow(inflowSections, fiscalFrom, period);
-    const expenseYtd = flow(outflowSections, fiscalFrom, period);
-
     const arCode = mappingCode_(settings, 'ar');
     const apCode = mappingCode_(settings, 'ap');
-    const arTotals = agingReports_(agingBuild_(posted.filter(row => row.code === arCode && row.date <= asOf), 'AR', asOf), 'AR', asOf, { company: company }).totals;
-    const apTotals = agingReports_(agingBuild_(posted.filter(row => row.code === apCode && row.date <= asOf), 'AP', asOf), 'AP', asOf, { company: company }).totals;
 
-    const grouped = new Map();
-    posted.forEach(row => {
-      const id = String(row.id || '');
-      if (!id) return;
-      if (!grouped.has(id)) grouped.set(id, { journalId: id, date: row.date, journalType: row.type || '', description: row.desc || '', reference: row.ref || '', party: row.party || '', debit: 0, credit: 0, lines: 0 });
-      const item = grouped.get(id);
-      item.debit += row.debit;
-      item.credit += row.credit;
-      item.lines += 1;
-    });
-    const recent = Array.from(grouped.values())
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+    let cash = 0, income = 0, expense = 0, incomeYtd = 0, expenseYtd = 0, drafts = 0;
+    let tbEnd = 0, bsAssets = 0, bsLiabEq = 0;
+    const recentMap = new Map();
+    const arLines = [], apLines = [];
+
+    for (let i = 0; i < values.length; i++) {
+      const r = values[i];
+      const status = String(r[COL.status] || '');
+      const code = String(r[COL.accountCode] || '').trim();
+      const debit = Number(r[COL.debit]) || 0;
+      const credit = Number(r[COL.credit]) || 0;
+      const id = String(r[COL.id] || '').trim();
+      const type = String(r[COL.type] || '');
+      const date = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
+      const rowPeriod = Number(r[COL.period]) || (date.getFullYear() * 100 + date.getMonth() + 1);
+
+      if (status === STATUS.DRAFT) {
+        if (id && !recentMap.has('D:' + id)) { drafts++; recentMap.set('D:' + id, true); }
+        continue;
+      }
+      if (status !== STATUS.POSTED) continue;
+
+      if (cashCodes.has(code) && rowPeriod <= period) cash += debit - credit;
+
+      const sec = section.get(code);
+      if (rowPeriod >= fiscalFrom && rowPeriod <= period && NO_FLOW.indexOf(type) < 0) {
+        if (inflowSections.indexOf(sec) >= 0) { const v = -1 * (debit - credit); incomeYtd += v; if (rowPeriod === period) income += v; }
+        else if (outflowSections.indexOf(sec) >= 0) { const v = (debit - credit); expenseYtd += v; if (rowPeriod === period) expense += v; }
+      }
+
+      if (rowPeriod <= period) {
+        tbEnd += debit - credit;
+        if (sec === 'CA' || sec === 'NCA') bsAssets += debit - credit;
+        else if (sec === 'CL' || sec === 'NCL') bsLiabEq += credit - debit;
+        else if (sec === 'EQ') bsLiabEq += credit - debit;
+        else if (sec) bsLiabEq += credit - debit; // P&L in equity until closed
+      }
+
+      if (id) {
+        const item = recentMap.get(id);
+        if (!item || item === true) {
+          recentMap.set(id, { journalId: id, date: date, journalType: type, description: String(r[COL.description] || ''), reference: String(r[COL.reference] || ''), party: String(r[COL.party] || ''), debit: 0, credit: 0, lines: 0 });
+        }
+        const rec = recentMap.get(id);
+        if (rec && rec !== true) { rec.debit += debit; rec.credit += credit; rec.lines += 1; }
+      }
+
+      if (date <= asOf && (code === arCode || code === apCode)) {
+        const line = { date: date, id: id, ref: String(r[COL.reference] || ''), desc: String(r[COL.lineDescription] || r[COL.description] || ''), party: String(r[COL.party] || ''), partyId: String(r[COL.partyId] || ''), due: r[COL.dueDate] instanceof Date ? r[COL.dueDate] : null, debit: debit, credit: credit };
+        if (code === arCode) arLines.push(line);
+        if (code === apCode) apLines.push(line);
+      }
+    }
+
+    // Count drafts accurately (unique IDs)
+    const draftIds = new Set();
+    for (let i = 0; i < values.length; i++) {
+      const r = values[i];
+      if (String(r[COL.status] || '') === STATUS.DRAFT) draftIds.add(String(r[COL.id] || '').trim());
+    }
+    drafts = draftIds.size;
+
+    const company = String(settings['Company Name'] || '');
+    const currency = String(settings['Currency'] || 'IDR').trim() || 'IDR';
+    const net = r2_(income - expense);
+    const arTotals = agingReports_(agingBuild_(arLines, 'AR', asOf), 'AR', asOf, { company: company }).totals;
+    const apTotals = agingReports_(agingBuild_(apLines, 'AP', asOf), 'AP', asOf, { company: company }).totals;
+
+    const recent = Array.from(recentMap.values())
+      .filter(v => v && v !== true)
       .sort((a, b) => (b.date - a.date) || String(b.journalId).localeCompare(String(a.journalId)))
       .slice(0, 6)
       .map(item => ({
-        journalId: item.journalId,
-        date: dateToIso_(item.date),
-        journalType: item.journalType,
-        description: item.description,
-        reference: item.reference,
-        party: item.party,
-        debit: r2_(item.debit),
-        credit: r2_(item.credit),
-        lines: item.lines
+        journalId: item.journalId, date: dateToIso_(item.date), journalType: item.journalType,
+        description: item.description, reference: item.reference, party: item.party,
+        debit: r2_(item.debit), credit: r2_(item.credit), lines: item.lines
       }));
 
-    const drafts = getDraftList().length;
-    const tbDiff = Math.abs(Number(reports.tb.diff) || 0);
-    const bsDiff = Math.abs(Number(reports.bs.diff) || 0);
+    const tbDiff = Math.abs(r2_(tbEnd));
+    const bsDiff = Math.abs(r2_(bsAssets - bsLiabEq));
     const checks = [];
-    if (tbDiff > TOLERANCE || bsDiff > TOLERANCE) {
-      checks.push({ level: 'danger', text: tr_('Ledger or balance sheet is out of balance. Run Check COA & Settings.',
-        'Buku besar atau neraca tidak seimbang. Jalankan Periksa COA & Pengaturan.') });
-    }
-    if (drafts) {
-      checks.push({ level: 'warn', text: tr_(drafts + ' journal draft(s) are waiting to be posted.',
-        drafts + ' draf jurnal menunggu untuk diposting.') });
-    }
-    if (arTotals.overdue > 0) {
-      checks.push({ level: 'warn', text: tr_('Some receivables are past their due date.', 'Ada piutang yang telah melewati jatuh tempo.') });
-    }
-    if (!checks.length) {
-      checks.push({ level: 'ok', text: tr_('Ledger balances and no urgent action is needed.', 'Buku seimbang dan tidak ada tindakan mendesak.') });
-    }
+    if (tbDiff > TOLERANCE || bsDiff > TOLERANCE) checks.push({ level: 'danger', text: tr_('Ledger or balance sheet is out of balance. Run Check COA & Settings.', 'Buku besar atau neraca tidak seimbang. Jalankan Periksa COA & Pengaturan.') });
+    if (drafts) checks.push({ level: 'warn', text: tr_(drafts + ' journal draft(s) are waiting to be posted.', drafts + ' draf jurnal menunggu untuk diposting.') });
+    if (arTotals.overdue > 0) checks.push({ level: 'warn', text: tr_('Some receivables are past their due date.', 'Ada piutang yang telah melewati jatuh tempo.') });
+    if (!checks.length) checks.push({ level: 'ok', text: tr_('Ledger balances and no urgent action is needed.', 'Buku seimbang dan tidak ada tindakan mendesak.') });
 
-    return {
-      success: true,
-      company: company,
-      mode: getCompanyMode_(),
-      currency: currency,
-      profile: {
-        legalName: String(settings['Legal Name'] || ''),
-        npwp: String(settings['NPWP'] || ''),
-        nib: String(settings['NIB'] || ''),
-        address: String(settings['Address'] || ''),
-        phone: String(settings['Phone'] || ''),
-        email: String(settings['Email'] || ''),
-        businessType: String(settings['Business Type'] || ''),
-        goLiveDate: String(settings['Go Live Date'] || ''),
-        fiscalStart: fiscalStart
-      },
-      period: periodText,
-      fiscalFrom: String(fiscalFrom).slice(0, 4) + '-' + String(fiscalFrom).slice(4),
-      hasData: posted.length > 0,
-      cash: cash,
-      income: income,
-      expense: expense,
-      net: net,
-      incomeYtd: incomeYtd,
-      expenseYtd: expenseYtd,
-      ar: arTotals.open,
-      arOverdue: arTotals.overdue,
-      ap: apTotals.open,
-      apOverdue: apTotals.overdue,
-      assets: Number(reports.bs.ta[0]) || 0,
-      liabilities: Number(reports.bs.tl[0]) || 0,
-      equity: Number(reports.bs.te[0]) || 0,
-      drafts: drafts,
-      recent: recent,
-      checks: checks,
+    const result = {
+      success: true, company: company, mode: getCompanyMode_(), currency: currency,
+      profile: { legalName: String(settings['Legal Name'] || ''), npwp: String(settings['NPWP'] || ''), nib: String(settings['NIB'] || ''), address: String(settings['Address'] || ''), phone: String(settings['Phone'] || ''), email: String(settings['Email'] || ''), businessType: String(settings['Business Type'] || ''), goLiveDate: String(settings['Go Live Date'] || ''), fiscalStart: fiscalStart },
+      period: periodText, fiscalFrom: String(fiscalFrom).slice(0, 4) + '-' + String(fiscalFrom).slice(4),
+      hasData: values.length > 0, cash: r2_(cash), income: r2_(income), expense: r2_(expense), net: net,
+      incomeYtd: r2_(incomeYtd), expenseYtd: r2_(expenseYtd),
+      ar: arTotals.open, arOverdue: arTotals.overdue, ap: apTotals.open, apOverdue: apTotals.overdue,
+      assets: r2_(bsAssets), liabilities: 0, equity: r2_(bsLiabEq), drafts: drafts, recent: recent, checks: checks,
       updatedAt: new Date().toISOString()
     };
+    webCachePut_(WEB_CACHE_DASH, result, 120);
+    return result;
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }
 }
 
+const WEB_CACHE_DASH = 'web:dashboard';
+const WEB_CACHE_JOURNALS = 'web:journals:';
+
+function webCacheGet_(key) {
+  try {
+    const raw = CacheService.getScriptCache().get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function webCachePut_(key, value, seconds) {
+  try {
+    const raw = JSON.stringify(value);
+    if (raw.length < 95000) CacheService.getScriptCache().put(key, raw, seconds || 120);
+  } catch (e) {}
+}
+function webInvalidateCache_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const keys = [WEB_CACHE_DASH];
+    for (let i = 0; i < 5; i++) keys.push(WEB_CACHE_JOURNALS + 'ALL:' + [50,100,200,500][i % 4]);
+    ['ALL','POSTED','DRAFT'].forEach(s => [50,100,200,500].forEach(l => keys.push(WEB_CACHE_JOURNALS + s + ':' + l)));
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+
 function webSetLanguage(lang) {
   setLanguage_(lang === 'ID' ? 'ID' : 'EN');
+  webInvalidateCache_();
   return { success: true, language: getLanguage() };
 }
 
@@ -423,6 +449,35 @@ function webInstallSystem(options) {
 
 function webRunSetupCheck() {
   return runSetupCheck({ web: true });
+}
+
+function webExportAccountingExcel() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx';
+    const token = ScriptApp.getOAuthToken();
+    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) throw new Error('Export failed: HTTP ' + res.getResponseCode());
+    const blob = res.getBlob().setName((ss.getName() || 'Accounting') + '.xlsx');
+    const b64 = Utilities.base64Encode(blob.getBytes());
+    return { success: true, fileName: blob.getName(), mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: b64 };
+  } catch (e) {
+    return { success: false, message: e && e.message ? e.message : String(e) };
+  }
+}
+
+function webExportSopPdf() {
+  try {
+    const lang = getLanguage() === 'ID' ? 'ID' : 'EN';
+    const file = lang === 'ID' ? 'UserGuideId' : 'UserGuide';
+    const html = HtmlService.createHtmlOutputFromFile(file).getContent();
+    const blob = Utilities.newBlob(html, 'text/html', 'SOP.html').getAs('application/pdf');
+    blob.setName((lang === 'ID' ? 'Panduan_SOP' : 'Accounting_SOP') + '.pdf');
+    const b64 = Utilities.base64Encode(blob.getBytes());
+    return { success: true, fileName: blob.getName(), mimeType: 'application/pdf', data: b64 };
+  } catch (e) {
+    return { success: false, message: e && e.message ? e.message : String(e) };
+  }
 }
 
 function webDateTime_(value) {
@@ -511,9 +566,13 @@ function webListJournals(options) {
     const opts = options || {};
     const status = String(opts.status || 'ALL').toUpperCase();
     const limit = Math.max(1, Math.min(500, Number(opts.limit) || 200));
-    const values = getRequiredSheet_(SHEETS.JOURNAL).getDataRange().getValues();
+    const cacheKey = WEB_CACHE_JOURNALS + status + ':' + limit;
+    const cached = webCacheGet_(cacheKey);
+    if (cached) return cached;
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
     const grouped = {};
-    for (let i = 1; i < values.length; i++) {
+    for (let i = 0; i < values.length; i++) {
       const row = values[i];
       const id = String(row[COL.id] || '').trim();
       if (!id) continue;
@@ -554,7 +613,9 @@ function webListJournals(options) {
       item.debit = r2_(item.debit);
       item.credit = r2_(item.credit);
     });
-    return { success: true, journals: journals, count: journals.length };
+    const result = { success: true, journals: journals, count: journals.length };
+    webCachePut_(cacheKey, result, 120);
+    return result;
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }

@@ -57,6 +57,10 @@
         en: ['Reports', 'AR & AP Aging Dashboard', 'Generates aging and open-items reports as at the chosen date.', 'Generate aging'],
         id: ['Laporan', 'Dashboard Umur Piutang & Utang', 'Membuat laporan umur dan item terbuka pada tanggal yang dipilih.', 'Buat laporan umur']
       },
+      'export-excel': {
+        en: ['Other Support', 'Export to Excel', 'Export the full accounting spreadsheet as an Excel (.xlsx) file.', 'Export Excel'],
+        id: ['Dukungan Lain', 'Ekspor ke Excel', 'Ekspor seluruh spreadsheet akuntansi sebagai file Excel (.xlsx).', 'Ekspor Excel']
+      },
       install: {
         en: ['System', 'Install / Update System Dashboard', 'Creates or updates sheets and default settings.', 'Run install'],
         id: ['Sistem', 'Dashboard Instal / Perbarui Sistem', 'Membuat atau memperbarui lembar dan pengaturan bawaan.', 'Jalankan instalasi']
@@ -83,9 +87,25 @@
         '</label></div>';
     }
 
+    function downloadFile(result) {
+      const bytes = atob(result.data);
+      const arr = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob = new Blob([arr], { type: result.mimeType || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.fileName || 'export'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
     function show(result) {
       $('run').disabled = false;
       $('out').className = '';
+      if (result && result.data && result.fileName) {
+        downloadFile(result);
+        $('out').textContent = (LANG === 'ID' ? 'File diunduh: ' : 'Downloaded: ') + result.fileName;
+        return;
+      }
       if (result && Array.isArray(result.issues)) {
         $('out').textContent = result.issues.length
           ? result.issues.join('\n')
@@ -117,6 +137,7 @@
       if (ACTION === 'stock-movements') call('webProcessStockMovements');
       else if (ACTION === 'stock-summary') call('webGenerateStockSummary', $('asOf').value);
       else if (ACTION === 'aging') call('webGenerateAging', $('asOf').value);
+      else if (ACTION === 'export-excel') call('webExportAccountingExcel');
       else if (ACTION === 'install') call('webInstallSystem', { replaceCoa: $('replaceCoa').checked });
       else call('webRunSetupCheck');
     });

@@ -58,6 +58,7 @@
 <header class="top">
   <h1>Accounting System — User Guide and SOP</h1>
   <span class="meta">English source text</span>
+  <button id="pdfBtn" type="button">Export PDF</button>
   <button id="closeBtn" type="button">Close</button>
 </header>
 
@@ -641,6 +642,22 @@
 <script>
   document.getElementById('closeBtn').addEventListener('click', function () {
     google.script.host.close();
+  });
+  document.getElementById('pdfBtn').addEventListener('click', function () {
+    var btn = this; btn.disabled = true; btn.textContent = 'Exporting...';
+    google.script.run
+      .withSuccessHandler(function (res) {
+        btn.disabled = false; btn.textContent = 'Export PDF';
+        if (!res || !res.success) { alert((res && res.message) || 'Export failed'); return; }
+        var bytes = atob(res.data); var arr = new Uint8Array(bytes.length);
+        for (var i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+        var blob = new Blob([arr], { type: res.mimeType || 'application/pdf' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = res.fileName || 'SOP.pdf';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+      })
+      .withFailureHandler(function (e) { btn.disabled = false; btn.textContent = 'Export PDF'; alert(e && e.message ? e.message : e); })
+      .webExportSopPdf();
   });
   document.querySelectorAll('.toc a').forEach(function (link) {
     link.addEventListener('click', function (event) {

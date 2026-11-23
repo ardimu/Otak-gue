@@ -479,6 +479,7 @@ function importBankRows(payload) {
       dates[0], dates[dates.length - 1]]]);
     const durationMs = Date.now() - uploadStart;
     console.log('Bank Upload: ' + durationMs + 'ms for ' + rawRows.length + ' rows');
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     return { batchId: batchId, imported: built.imported, skipped: rows.length - built.imported,
       status: status, errors: built.errors.slice(0, 15), successCount: built.imported,
       failedCount: rows.length - built.imported, durationMs: durationMs };
@@ -581,6 +582,7 @@ function postImportBatch(batchId) {
     writeRowGroups_(sheet, found.numbers, found.rows);
     SpreadsheetApp.flush();
     setLogStatus_(batchId, STATUS.POSTED);
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
     return { message: tr_(Object.keys(byId).length + ' journals of batch ' + batchId + ' posted.', Object.keys(byId).length + ' jurnal dari batch ' + batchId + ' telah diposting.') };
   } finally {
@@ -606,6 +608,7 @@ function deleteImportBatch(batchId) {
     }
     SpreadsheetApp.flush();
     setLogStatus_(batchId, 'DELETED');
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
     return { message: tr_('Batch ' + batchId + ' deleted (' + found.rows.length + ' lines).', 'Batch ' + batchId + ' dihapus (' + found.rows.length + ' baris).') };
   } finally {
     lock.releaseLock();
