@@ -74,7 +74,7 @@ const WEB_NAV = [
     ]
   },
   {
-    key: 'system', en: 'System', id: 'Sistem', type: 'sections', groups: [
+    key: 'system', en: 'System', id: 'Sistem', type: 'flyout', groups: [
       {
         en: 'Settings', id: 'Pengaturan', items: [
           ['settings-profile', 'Company Profile', 'Profil Perusahaan', 'CP'],
