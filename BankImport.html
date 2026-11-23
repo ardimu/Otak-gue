@@ -61,13 +61,24 @@
 <datalist id="accList"></datalist>
 <datalist id="partyList"></datalist>
 
-<h1>Bank and petty cash import</h1>
-<p class="sub">Each line of the statement becomes one journal against the bank or petty cash account.</p>
-<ol class="steps">
+<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px">
+  <div>
+    <div style="color:#3457D5;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase">Transactions &amp; Input</div>
+    <h1 style="margin:6px 0 4px;font-size:24px">Bank &amp; Petty Cash Dashboard</h1>
+    <p class="sub">Import statement lines, review accounts, and post or draft journals in one place.</p>
+  </div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+  <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px"><span style="display:block;color:#64748B;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">Profiles</span><strong id="dashProfiles" style="display:block;margin-top:6px;font-size:22px">0</strong></div>
+  <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px"><span style="display:block;color:#64748B;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">Recent Batches</span><strong id="dashBatches" style="display:block;margin-top:6px;font-size:22px">0</strong></div>
+  <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px"><span style="display:block;color:#64748B;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">Rows Loaded</span><strong id="dashRows" style="display:block;margin-top:6px;font-size:22px">0</strong></div>
+</div>
+<details style="margin-bottom:14px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px"><summary style="cursor:pointer;font-weight:600;color:#3457D5">Import steps</summary>
+<ol class="steps" style="margin:10px 0 0">
   <li>Paste the statement into the <b>Bank Import</b> sheet, starting at A1 (Paste special, Values only).</li>
   <li>Choose the profile that matches the file and read the sheet.</li>
   <li>Check the account for each line, then import.</li>
-</ol>
+</ol></details>
 
 <div class="bar">
   <div class="field">
@@ -170,6 +181,7 @@ function loadSetup() {
       $('profile').innerHTML = s.profiles.map(p => '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>').join('');
       $('accList').innerHTML = s.accounts.map(a => '<option value="' + esc(accLabel(a)) + '"></option>').join('');
       $('partyList').innerHTML = s.parties.map(n => '<option value="' + esc(n) + '"></option>').join('');
+      $('dashProfiles').textContent = (s.profiles || []).length;
       showProfileNote(); renderBatches(s.batches);
       if (!s.profiles.length) say('There is no active profile in the Bank Profiles sheet. Run ACCOUNTING > Setup > Install / Update System.', 'error');
     })
@@ -184,6 +196,7 @@ $('profile').addEventListener('change', showProfileNote);
 
 function renderBatches(list) {
   if (setup) setup.batches = list;
+  $('dashBatches').textContent = (list || []).length;
   $('batches').innerHTML = list.length ? list.map(b => `
     <tr><td><b>${esc(b.batchId)}</b></td><td>${esc(b.at)}</td><td>${esc(b.profile)}</td><td class="num">${b.imported}</td>
     <td>${esc(b.from)} to ${esc(b.to)}</td><td>${esc(b.status)}</td>
@@ -231,6 +244,7 @@ function render() {
   const rows = data.rows;
   const n = { ok: 0, dup: 0, err: 0 };
   rows.forEach(r => { if (r.status === 'DUPLICATE') n.dup++; else if (r.status === 'ERROR') n.err++; else n.ok++; });
+  $('dashRows').textContent = rows.length;
   $('summary').innerHTML = '';
   [['Lines read', rows.length], ['New', n.ok], ['Already imported', n.dup], ['Errors', n.err], ['Skipped (no date or amount)', data.skipped]].forEach(it => {
     const d = document.createElement('div'); d.innerHTML = '<span>' + esc(it[0]) + '</span><strong>' + it[1] + '</strong>'; $('summary').appendChild(d);

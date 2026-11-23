@@ -1,284 +1,112 @@
 <!DOCTYPE html>
 <html>
 <head>
-<base target="_top">
-<meta charset="UTF-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<style>
-  :root {
-    --paper: #eef2ec; --sheet: #ffffff; --ink: #1d2a25; --muted: #5d6b65;
-    --rule: #d2dcd1; --accent: #1f5c46; --accent-soft: #e2eee8;
-    --danger: #a8322a; --danger-soft: #f8e6e4;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 18px; background: var(--paper); color: var(--ink);
-    font: 13px/1.45 "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
-  }
-  h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
-  .sub { color: var(--muted); margin-bottom: 14px; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
-  input[type=search] {
-    flex: 1; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 3px;
-    font: inherit; background: var(--sheet);
-  }
-  input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  button {
-    border: 1px solid transparent; border-radius: 3px; padding: 7px 12px;
-    font: inherit; font-weight: 500; cursor: pointer;
-  }
-  button:disabled { opacity: .5; cursor: wait; }
-  .ghost { background: var(--sheet); border-color: var(--rule); color: var(--ink); }
-  .edit { background: var(--sheet); border-color: var(--accent); color: var(--accent); }
-  .post { background: var(--accent); color: #fff; }
-  .del { background: var(--sheet); border-color: var(--danger); color: var(--danger); }
-  .wrap {
-    background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px;
-    overflow: auto; max-height: 440px;
-  }
-  table { width: 100%; border-collapse: collapse; min-width: 860px; }
-  th {
-    position: sticky; top: 0; background: #f4f7f3; text-align: left; font-weight: 600;
-    padding: 9px 10px; border-bottom: 1px solid var(--rule);
-  }
-  td { padding: 9px 10px; border-bottom: 1px solid #e8eee7; vertical-align: middle; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .actions { display: flex; gap: 6px; }
-  .empty { text-align: center; padding: 34px; color: var(--muted); }
-  #status { margin-top: 10px; color: var(--muted); min-height: 18px; }
-  #status.error { color: var(--danger); }
-  .overlay {
-    position: fixed; inset: 0; background: rgba(20, 30, 26, .45);
-    display: flex; align-items: center; justify-content: center; padding: 20px;
-  }
-  .overlay.hidden { display: none; }
-  .dialog { width: 100%; max-width: 420px; background: var(--sheet); border-radius: 4px; padding: 20px; }
-  .dialog h2 { margin: 0 0 8px; font-size: 16px; }
-  .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; }
-  .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-  .hidden { display: none !important; }
-</style>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin:0; padding:26px; background:var(--paper,#F4F6FA); color:var(--ink,#172033); }
+    .head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; }
+    .eyebrow { color:var(--accent,#3457D5); font-size:10.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:6px 0 4px; font-size:24px; } .sub { margin:0; color:var(--muted,#64748B); font-size:12.5px; }
+    .actions { display:flex; gap:8px; } .btn { padding:9px 14px; border-radius:8px; border:1px solid var(--rule,#E2E8F0); background:#fff; font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+    .btn.primary { background:var(--accent,#3457D5); color:#fff; border-color:var(--accent,#3457D5); }
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:16px; }
+    .stat { background:#fff; border:1px solid var(--rule,#E2E8F0); border-radius:12px; padding:14px 16px; }
+    .stat span { display:block; color:var(--muted,#64748B); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .stat strong { display:block; margin-top:6px; font-size:22px; }
+    .toolbar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
+    .toolbar input { height:36px; min-width:260px; padding:0 10px; border:1px solid var(--rule,#E2E8F0); border-radius:8px; font:inherit; }
+    .card { background:#fff; border:1px solid var(--rule,#E2E8F0); border-radius:12px; overflow:hidden; }
+    .scroll { overflow:auto; max-height:62vh; }
+    table { width:100%; border-collapse:collapse; font-size:12px; } th { position:sticky; top:0; background:#F8FAFC; padding:10px 12px; text-align:left; font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted,#64748B); border-bottom:1px solid var(--rule,#E2E8F0); }
+    td { padding:10px 12px; border-bottom:1px solid #F1F5F9; } td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .row-actions { display:flex; gap:6px; } .sm { padding:5px 9px; border-radius:6px; border:1px solid var(--rule,#E2E8F0); background:#fff; font-size:11px; font-weight:600; cursor:pointer; }
+    .sm.post { background:var(--accent,#3457D5); color:#fff; border-color:var(--accent,#3457D5); } .sm.del { color:#DC2626; border-color:#FECACA; }
+    .empty,.loading { padding:40px 20px; text-align:center; color:var(--muted,#64748B); }
+    #status { margin-top:10px; font-size:12px; color:var(--muted,#64748B); min-height:18px; } #status.error { color:#DC2626; }
+    .overlay { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
+    .overlay.hidden { display:none; } .dialog { width:100%; max-width:460px; background:#fff; border-radius:12px; padding:20px; }
+    .dialog h2 { margin:0 0 8px; font-size:16px; } .dialog p { margin:0; color:var(--muted,#64748B); white-space:pre-wrap; font-size:12px; }
+    .dialog .row { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+  </style>
 </head>
 <body>
-
-<h1>Draft Management</h1>
-<div class="sub">Drafts stay out of the General Ledger and the financial statements until you post them.</div>
-
-<div class="toolbar">
-  <input type="search" id="search" placeholder="Search by Journal ID, description, or reference">
-  <button class="ghost" id="refresh">Refresh</button>
-  <button class="post" id="postAll">Post All</button>
-</div>
-
-<div class="wrap">
-  <table>
-    <thead>
-      <tr>
-        <th>Journal ID</th><th>Date</th><th>Description</th><th class="num">Lines</th>
-        <th class="num">Debit</th><th class="num">Credit</th><th>Last updated</th><th>Actions</th>
-      </tr>
-    </thead>
-    <tbody id="body"><tr><td colspan="8" class="empty">Loading drafts...</td></tr></tbody>
-  </table>
-</div>
-<div id="status"></div>
-
-<div id="overlay" class="overlay hidden">
-  <div class="dialog">
-    <h2 id="dlgTitle"></h2>
-    <p id="dlgBody"></p>
-    <div class="row">
-      <button class="ghost" id="dlgCancel">Cancel</button>
-      <button class="post" id="dlgOk">Confirm</button>
+  <div class="head">
+    <div>
+      <div class="eyebrow"><?= lang === 'ID' ? 'Transaksi & Input' : 'Transactions & Input' ?></div>
+      <h1><?= lang === 'ID' ? 'Dashboard Draft Management' : 'Draft Management Dashboard' ?></h1>
+      <p class="sub"><?= lang === 'ID' ? 'Review, edit, posting, atau hapus draft sebelum masuk ke buku besar.' : 'Review, edit, post, or delete drafts before they hit the ledger.' ?></p>
+    </div>
+    <div class="actions">
+      <button class="btn" id="refresh"><?= lang === 'ID' ? 'Muat ulang' : 'Refresh' ?></button>
+      <button class="btn primary" id="postAll"><?= lang === 'ID' ? 'Posting Semua' : 'Post All' ?></button>
     </div>
   </div>
-</div>
+  <div class="stats">
+    <div class="stat"><span><?= lang === 'ID' ? 'Total Draft' : 'Total Drafts' ?></span><strong id="sTotal">0</strong></div>
+    <div class="stat"><span><?= lang === 'ID' ? 'Total Debit' : 'Total Debit' ?></span><strong id="sDebit">0</strong></div>
+    <div class="stat"><span><?= lang === 'ID' ? 'Total Kredit' : 'Total Credit' ?></span><strong id="sCredit">0</strong></div>
+    <div class="stat"><span><?= lang === 'ID' ? 'Siap Ditinjau' : 'Needs Review' ?></span><strong id="sReview">0</strong></div>
+  </div>
+  <div class="toolbar"><input type="search" id="search" placeholder="<?= lang === 'ID' ? 'Cari Journal ID, keterangan, referensi…' : 'Search Journal ID, description, reference…' ?>"></div>
+  <div class="card"><div class="scroll" id="bodyWrap"><div class="loading"><?= lang === 'ID' ? 'Memuat draft…' : 'Loading drafts…' ?></div></div></div>
+  <div id="status"></div>
 
-<script>
-  let drafts = [];
-  let busy = false;
-  let pending = null;
-  let failedFilter = null;
-  const $ = id => document.getElementById(id);
+  <div id="overlay" class="overlay hidden"><div class="dialog"><h2 id="dlgTitle"></h2><p id="dlgBody"></p><div class="row"><button class="btn" id="dlgCancel">Cancel</button><button class="btn primary" id="dlgOk">Confirm</button></div></div></div>
 
-  const fmt = n => Number(n || 0).toLocaleString('id-ID');
-  const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-  function setStatus(text, isError) {
-    $('status').textContent = text;
-    $('status').className = isError ? 'error' : '';
-  }
-
-  function setBusy(value) {
-    busy = value;
-    document.querySelectorAll('button').forEach(b => { b.disabled = value; });
-  }
-
-  function load() {
-    setStatus('Loading drafts...');
-    google.script.run
-      .withSuccessHandler(list => {
-        drafts = Array.isArray(list) ? list : [];
-        render();
-        setStatus(drafts.length === 1 ? '1 draft.' : drafts.length + ' drafts.');
-      })
-      .withFailureHandler(e => setStatus('Could not load drafts: ' + e.message, true))
-      .getDraftList();
-  }
-
-  function filteredDrafts() {
-    const q = $('search').value.trim().toLowerCase();
-    return drafts.filter(d =>
-      (!failedFilter || failedFilter.includes(d.journalId)) &&
-      [d.journalId, d.description, d.reference].some(v => String(v || '').toLowerCase().includes(q)));
-  }
-
-  function render() {
-    const list = filteredDrafts();
-    if (!list.length) {
-      $('body').innerHTML = '<tr><td colspan="8" class="empty">' +
-        (drafts.length ? 'No draft matches your search.' : 'No drafts. Save a journal as Draft to see it here.') +
-        '</td></tr>';
-      return;
+  <script>
+    const LANG = <?!= JSON.stringify(lang) ?>;
+    let drafts = [], busy = false, pending = null, failedFilter = null;
+    const $ = id => document.getElementById(id);
+    const fmt = n => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const esc = v => String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function setStatus(t,e){ $('status').textContent=t||''; $('status').className=e?'error':''; }
+    function setBusy(v){ busy=v; document.querySelectorAll('button').forEach(b=>b.disabled=v); }
+    function ask(title, body, ok, fn, cancel, hideCancel){ $('dlgTitle').textContent=title; $('dlgBody').textContent=body; $('dlgOk').textContent=ok; $('dlgCancel').textContent=cancel||'Cancel'; $('dlgCancel').classList.toggle('hidden',!!hideCancel); pending=fn; $('overlay').classList.remove('hidden'); }
+    function closeAsk(){ $('overlay').classList.add('hidden'); pending=null; }
+    $('dlgCancel').addEventListener('click', closeAsk);
+    $('dlgOk').addEventListener('click', ()=>{ const fn=pending; closeAsk(); if(fn) fn(); });
+    function missingPartyBody(count, details){ return count+' transaction'+(count===1?' has':'s have')+' no Customer / Supplier assigned. Continue?\n\n'+(details||[]).join('\n'); }
+    function load(){ setStatus(LANG==='ID'?'Memuat draft…':'Loading drafts…'); google.script.run.withSuccessHandler(list=>{ drafts=Array.isArray(list)?list:[]; renderStats(); render(); setStatus(drafts.length+' draft(s).'); }).withFailureHandler(e=>setStatus(e.message||String(e),true)).getDraftList(); }
+    function renderStats(){ $('sTotal').textContent=drafts.length; $('sDebit').textContent=fmt(drafts.reduce((s,d)=>s+Number(d.debit||0),0)); $('sCredit').textContent=fmt(drafts.reduce((s,d)=>s+Number(d.credit||0),0)); $('sReview').textContent=drafts.filter(d=>Number(d.missingParty||0)>0).length; }
+    function filtered(){ const q=$('search').value.trim().toLowerCase(); return drafts.filter(d=>(!failedFilter||failedFilter.includes(d.journalId)) && [d.journalId,d.description,d.reference].some(v=>String(v||'').toLowerCase().includes(q))); }
+    function render(){
+      const list=filtered();
+      if(!list.length){ $('bodyWrap').innerHTML='<div class="empty">'+(drafts.length?(LANG==='ID'?'Tidak ada draft cocok.':'No draft matches your search.'):(LANG==='ID'?'Belum ada draft.':'No drafts.'))+'</div>'; return; }
+      let html='<table><thead><tr><th>Journal ID</th><th>'+ (LANG==='ID'?'Tanggal':'Date') +'</th><th>'+ (LANG==='ID'?'Keterangan':'Description') +'</th><th class="num">'+ (LANG==='ID'?'Baris':'Lines') +'</th><th class="num">Debit</th><th class="num">Credit</th><th>'+ (LANG==='ID'?'Update':'Updated') +'</th><th>'+ (LANG==='ID'?'Aksi':'Actions') +'</th></tr></thead><tbody>';
+      list.forEach(d=>{ html+='<tr><td><strong>'+esc(d.journalId)+'</strong></td><td>'+esc(d.date)+'</td><td>'+esc(d.description)+'<div style="color:#64748B;font-size:10.5px">'+esc(d.journalType)+'</div></td><td class="num">'+d.lineCount+'</td><td class="num">'+fmt(d.debit)+'</td><td class="num">'+fmt(d.credit)+'</td><td>'+esc(d.updatedAt)+'</td><td><div class="row-actions"><button class="sm" data-act="edit" data-id="'+esc(d.journalId)+'">Edit</button><button class="sm post" data-act="post" data-id="'+esc(d.journalId)+'">Post</button><button class="sm del" data-act="delete" data-id="'+esc(d.journalId)+'">Delete</button></div></td></tr>'; });
+      $('bodyWrap').innerHTML=html+'</tbody></table>';
     }
-    $('body').innerHTML = list.map(d => `
-      <tr>
-        <td><strong>${esc(d.journalId)}</strong></td>
-        <td>${esc(d.date)}</td>
-        <td>${esc(d.description)}<div class="sub" style="margin:0">${esc(d.journalType)}</div></td>
-        <td class="num">${d.lineCount}</td>
-        <td class="num">${fmt(d.debit)}</td>
-        <td class="num">${fmt(d.credit)}</td>
-        <td>${esc(d.updatedAt)}</td>
-        <td><div class="actions">
-          <button class="edit" data-act="edit" data-id="${esc(d.journalId)}">Edit</button>
-          <button class="post" data-act="post" data-id="${esc(d.journalId)}">Post</button>
-          <button class="del" data-act="delete" data-id="${esc(d.journalId)}">Delete</button>
-        </div></td>
-      </tr>`).join('');
-  }
-
-  function ask(title, body, okLabel, onOk, cancelLabel, hideCancel) {
-    $('dlgTitle').textContent = title;
-    $('dlgBody').textContent = body;
-    $('dlgOk').textContent = okLabel;
-    $('dlgCancel').textContent = cancelLabel || 'Cancel';
-    $('dlgCancel').classList.toggle('hidden', !!hideCancel);
-    pending = onOk;
-    $('overlay').classList.remove('hidden');
-  }
-  function missingPartyBody(count, details) {
-    return count + ' transaction' + (count === 1 ? ' has' : 's have') + ' no Customer / Supplier assigned. You can still post them to the General Ledger, but they will not appear in the Customer / Supplier ledger. Do you want to continue?' +
-      (details && details.length ? '\n\n' + details.join('\n') : '');
-  }
-  function closeAsk() { $('overlay').classList.add('hidden'); pending = null; }
-  $('dlgCancel').addEventListener('click', closeAsk);
-  $('dlgOk').addEventListener('click', () => { const fn = pending; closeAsk(); if (fn) fn(); });
-
-  function run(label, serverFn, id) {
-    setBusy(true);
-    setStatus(label);
-    google.script.run
-      .withSuccessHandler(r => { setBusy(false); setStatus(r && r.message ? r.message : 'Done.'); load(); })
-      .withFailureHandler(e => { setBusy(false); setStatus(e.message || String(e), true); })
-      [serverFn](id);
-  }
-
-  function postAll() {
-    if (busy) return;
-    failedFilter = null;
-    const list = filteredDrafts();
-    if (!list.length) { setStatus('No drafts to post'); return; }
-    const ids = list.map(d => d.journalId);
-    const total = ids.length;
-    const debit = list.reduce((sum, d) => sum + Number(d.debit || 0), 0);
-    const without = list.filter(d => Number(d.missingParty || 0) > 0).length;
-    const body = 'You are about to post ' + total + ' draft journals to the General Ledger. ' +
-      'Please confirm you have reviewed the journals. Posted journals cannot be edited and will affect your balances.' +
-      '\n\n' + total + ' journals | Total Rp ' + fmt(debit) + ' | ' + without + ' journals without Customer / Supplier';
-    ask('Post All Drafts?', body, 'Post All', () => postAllChunks(ids), 'Review Again');
-  }
-
-  function postAllChunks(ids) {
-    setBusy(true);
-    const total = ids.length;
-    let done = 0, shown = 0, posted = [], failures = [], missing = 0;
-    const ticker = setInterval(() => {
-      if (shown < total - 1) { shown++; setStatus('Posting ' + shown + ' / ' + total + '...'); }
-    }, 120);
-    setStatus('Posting 0 / ' + total + '...');
-    const step = () => {
-      if (done >= total) {
-        clearInterval(ticker);
-        setBusy(false);
-        showPostAllResult(posted, failures);
-        load();
-        return;
+    function run(label, fn, id){ setBusy(true); setStatus(label); google.script.run.withSuccessHandler(r=>{ setBusy(false); setStatus(r&&r.message?r.message:'Done.'); load(); }).withFailureHandler(e=>{ setBusy(false); setStatus(e.message||String(e),true); })[fn](id); }
+    function postAll(){
+      if(busy) return; failedFilter=null; const list=filtered(); if(!list.length){setStatus('No drafts to post'); return;}
+      const ids=list.map(d=>d.journalId); const debit=list.reduce((s,d)=>s+Number(d.debit||0),0); const without=list.filter(d=>Number(d.missingParty||0)>0).length;
+      ask('Post All Drafts?','You are about to post '+ids.length+' drafts. Total Rp '+fmt(debit)+'. '+without+' draft(s) missing Customer/Supplier.\nPosted journals cannot be edited.','Post All',()=>postAllChunks(ids),'Review Again');
+    }
+    function postAllChunks(ids){
+      setBusy(true); const total=ids.length; let done=0, posted=[], failures=[]; setStatus('Posting 0 / '+total+'...');
+      const step=()=>{ if(done>=total){ setBusy(false); showPostAllResult(posted,failures); load(); return; }
+        const chunk=ids.slice(done,done+50);
+        google.script.run.withSuccessHandler(r=>{ done+=chunk.length; posted=posted.concat(r.posted||[]); failures=failures.concat(r.failures||[]); setStatus('Posting '+done+' / '+total+'...'); step(); })
+        .withFailureHandler(e=>{ setBusy(false); setStatus(e.message||String(e),true); load(); }).postDraftList(chunk);
+      }; step();
+    }
+    function showPostAllResult(posted, failures){
+      if(!failures.length){ ask('Post All Complete','All '+posted.length+' drafts posted successfully.','Close',null,'Close',true); return; }
+      ask('Post All Complete','Posted: '+posted.length+', Failed: '+failures.length+'\n\n'+failures.map(f=>f.journalNo+' - '+f.reason).join('\n'),'View Failed',()=>{ failedFilter=failures.map(f=>f.journalNo); $('search').value=''; render(); setStatus('Showing '+failedFilter.length+' failed drafts.'); },'Close');
+    }
+    $('bodyWrap').addEventListener('click', ev=>{
+      const btn=ev.target.closest('button[data-act]'); if(!btn||busy) return; const id=btn.dataset.id;
+      if(btn.dataset.act==='edit'){
+        if(window.parent && window.parent.webOpenModal){ window.parent.webOpenModal('journal-new', LANG==='ID'?'Jurnal Baru':'New Journal Entry', 'draftId='+encodeURIComponent(id)); return; }
+        setBusy(true); setStatus('Opening '+id+'...');
+        google.script.run.withSuccessHandler(()=>{ setBusy(false); setStatus(''); }).withFailureHandler(e=>{ setBusy(false); setStatus(e.message||String(e),true); }).openDraftEditor(id);
       }
-      const chunk = ids.slice(done, done + 50);
-      google.script.run
-        .withSuccessHandler(r => {
-          done += chunk.length;
-          shown = Math.max(shown, done);
-          posted = posted.concat(r.posted || []);
-          failures = failures.concat(r.failures || []);
-          missing += Number(r.missingPartyLines || 0);
-          setStatus('Posting ' + done + ' / ' + total + '...');
-          step();
-        })
-        .withFailureHandler(e => {
-          clearInterval(ticker);
-          setBusy(false);
-          setStatus(e.message || String(e), true);
-          load();
-        })
-        .postDraftList(chunk);
-    };
-    step();
-  }
-
-  function showPostAllResult(posted, failures) {
-    if (!failures.length) {
-      ask('Post All Complete', 'All ' + posted.length + ' drafts posted successfully.', 'Close', null, 'Close', true);
-      return;
-    }
-    const body = 'Post All Complete: ' + posted.length + ' posted, ' + failures.length + ' failed.\n\n' +
-      failures.map(f => f.journalNo + ' - ' + f.reason).join('\n');
-    ask('Post All Complete', body, 'View Failed', () => {
-      failedFilter = failures.map(f => f.journalNo);
-      $('search').value = '';
-      render();
-      setStatus('Showing ' + failedFilter.length + ' failed drafts.');
-    }, 'Close');
-  }
-
-  $('body').addEventListener('click', ev => {
-    const btn = ev.target.closest('button[data-act]');
-    if (!btn || busy) return;
-    const id = btn.dataset.id;
-    if (btn.dataset.act === 'edit') {
-      setBusy(true);
-      setStatus('Opening ' + id + '...');
-      google.script.run
-        .withSuccessHandler(() => google.script.host.close())
-        .withFailureHandler(e => { setBusy(false); setStatus('Could not open the draft: ' + e.message, true); })
-        .openDraftEditor(id);
-    } else if (btn.dataset.act === 'post') {
-      const d = drafts.find(x => x.journalId === id) || {};
-      const go = () => run('Posting...', 'postDraftFromManagement', id);
-      if (d.missingParty) ask('Missing Customer / Supplier', missingPartyBody(d.missingParty, d.missingRows), 'Post Anyway', go, 'Review Again');
-      else go();
-    } else if (btn.dataset.act === 'delete') {
-      ask('Delete ' + id + '?', 'This draft will be removed permanently.', 'Delete draft',
-        () => run('Deleting...', 'deleteDraft', id));
-    }
-  });
-
-  $('postAll').addEventListener('click', postAll);
-  $('search').addEventListener('input', () => { failedFilter = null; render(); });
-  $('refresh').addEventListener('click', () => { failedFilter = null; load(); });
-  load();
-</script>
+      else if(btn.dataset.act==='post'){ const d=drafts.find(x=>x.journalId===id)||{}; const go=()=>run('Posting...','postDraftFromManagement',id); if(d.missingParty) ask('Missing Customer / Supplier', missingPartyBody(d.missingParty,d.missingRows),'Post Anyway',go,'Review Again'); else go(); }
+      else if(btn.dataset.act==='delete'){ ask('Delete '+id+'?','This draft will be removed permanently.','Delete draft',()=>run('Deleting...','deleteDraft',id)); }
+    });
+    $('postAll').addEventListener('click', postAll); $('search').addEventListener('input',()=>{ failedFilter=null; render(); }); $('refresh').addEventListener('click',()=>{ failedFilter=null; load(); }); load();
+  </script>
 </body>
 </html>

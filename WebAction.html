@@ -32,7 +32,7 @@
 </head>
 <body>
   <section>
-    <div class="eyebrow"><?= lang === 'ID' ? 'Proses sistem' : 'System action' ?></div>
+    <div class="eyebrow" id="eyebrow"><?= lang === 'ID' ? 'Dashboard' : 'Dashboard' ?></div>
     <h1 id="title"></h1>
     <p class="sub" id="sub"></p>
     <div id="fields"></div>
@@ -46,30 +46,31 @@
     const today = new Date().toISOString().slice(0, 10);
     const T = {
       'stock-movements': {
-        en: ['Process stock movements', 'Reads the Stock Movements sheet and creates drafts.', 'Process movements'],
-        id: ['Proses mutasi persediaan', 'Membaca lembar Stock Movements dan membuat draf.', 'Proses mutasi']
+        en: ['Assets', 'Process Stock Movements Dashboard', 'Reads the Stock Movements sheet and creates draft journals.', 'Process movements'],
+        id: ['Aset', 'Dashboard Proses Mutasi Persediaan', 'Membaca lembar Stock Movements dan membuat draf jurnal.', 'Proses mutasi']
       },
       'stock-summary': {
-        en: ['Stock summary', 'Writes the Stock Summary sheet as at the chosen date.', 'Generate summary'],
-        id: ['Ringkasan persediaan', 'Menulis lembar Ringkasan Persediaan pada tanggal yang dipilih.', 'Buat ringkasan']
+        en: ['Assets', 'Stock Summary Dashboard', 'Generates stock summary as at the chosen date.', 'Generate summary'],
+        id: ['Aset', 'Dashboard Ringkasan Persediaan', 'Membuat ringkasan persediaan pada tanggal yang dipilih.', 'Buat ringkasan']
       },
       aging: {
-        en: ['AR and AP aging', 'Writes aging and open-items sheets as at the chosen date.', 'Generate aging'],
-        id: ['Umur piutang dan utang', 'Menulis lembar umur dan rincian terbuka pada tanggal yang dipilih.', 'Buat laporan umur']
+        en: ['Reports', 'AR & AP Aging Dashboard', 'Generates aging and open-items reports as at the chosen date.', 'Generate aging'],
+        id: ['Laporan', 'Dashboard Umur Piutang & Utang', 'Membuat laporan umur dan item terbuka pada tanggal yang dipilih.', 'Buat laporan umur']
       },
       install: {
-        en: ['Install / update system', 'Creates or updates sheets and default settings.', 'Run install'],
-        id: ['Instal / perbarui sistem', 'Membuat atau memperbarui lembar dan pengaturan bawaan.', 'Jalankan instalasi']
+        en: ['System', 'Install / Update System Dashboard', 'Creates or updates sheets and default settings.', 'Run install'],
+        id: ['Sistem', 'Dashboard Instal / Perbarui Sistem', 'Membuat atau memperbarui lembar dan pengaturan bawaan.', 'Jalankan instalasi']
       },
       check: {
-        en: ['Check COA & settings', 'Diagnoses chart of accounts and required settings.', 'Run check'],
-        id: ['Periksa COA & pengaturan', 'Memeriksa daftar akun dan pengaturan yang diperlukan.', 'Jalankan pemeriksaan']
+        en: ['System', 'Check COA & Settings Dashboard', 'Diagnoses chart of accounts and required settings.', 'Run check'],
+        id: ['Sistem', 'Dashboard Periksa COA & Pengaturan', 'Memeriksa daftar akun dan pengaturan yang diperlukan.', 'Jalankan pemeriksaan']
       }
     };
     const t = (T[ACTION] || T.check)[LANG === 'ID' ? 'id' : 'en'];
-    $('title').textContent = t[0];
-    $('sub').textContent = t[1];
-    $('run').textContent = t[2];
+    $('eyebrow').textContent = t[0];
+    $('title').textContent = t[1];
+    $('sub').textContent = t[2];
+    $('run').textContent = t[3];
 
     if (ACTION === 'stock-summary' || ACTION === 'aging') {
       $('fields').innerHTML = '<label for="asOf">' + (LANG === 'ID' ? 'Tanggal acuan (YYYY-MM-DD)' : 'As at (YYYY-MM-DD)') + '</label>' +

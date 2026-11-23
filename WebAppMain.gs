@@ -10,67 +10,74 @@ const WEB_PAGES = {
   home: { en: 'Dashboard', id: 'Beranda', file: 'WebHome', idFile: 'WebHome' },
   'journal-new': {
     en: 'New Journal Entry', id: 'Jurnal Baru', file: 'JournalForm', idFile: 'JournalFormId',
-    vars: function () { return { draftId: '', appMode: getCompanyMode_() }; }
+    vars: function (params) { return { draftId: String((params && params.draftId) || ''), appMode: getCompanyMode_() }; }
   },
-  journals: { en: 'Journal List', id: 'Daftar Jurnal', file: 'JournalList', idFile: 'JournalList' },
-  'bank-import': { en: 'Bank & Petty Cash Import', id: 'Impor Bank & Kas Kecil', file: 'BankImport', idFile: 'BankImportId' },
-  drafts: { en: 'Draft Management', id: 'Kelola Draf', file: 'DraftManagement', idFile: 'DraftManagementId' },
-  parties: { en: 'Parties (Customer or Supplier)', id: 'Pihak (Pelanggan atau Pemasok)', file: 'PartiesManager', idFile: 'PartiesManagerId' },
-  'period-end': { en: 'Period-End Tools', id: 'Alat Akhir Periode', file: 'PeriodEnd', idFile: 'PeriodEndId' },
-  'inventory-movements': { en: 'Process Stock Movements', id: 'Proses Mutasi Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-movements' },
-  'inventory-summary': { en: 'Stock Summary', id: 'Ringkasan Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-summary' },
+  journals: { en: 'Journal List', id: 'Daftar Jurnal', file: 'JournalList', idFile: 'JournalList', dashboard: true },
+  'bank-import': { en: 'Bank & Petty Cash', id: 'Bank & Kas Kecil', file: 'BankImport', idFile: 'BankImportId', dashboard: true },
+  drafts: { en: 'Draft Management', id: 'Kelola Draf', file: 'DraftManagement', idFile: 'DraftManagementId', dashboard: true },
+  parties: { en: 'Parties', id: 'Pihak', file: 'PartiesManager', idFile: 'PartiesManagerId', dashboard: true },
+  'period-end': { en: 'Period-End Tools', id: 'Alat Akhir Periode', file: 'PeriodEnd', idFile: 'PeriodEndId', dashboard: true },
+  'inventory-movements': { en: 'Process Stock Movements', id: 'Proses Mutasi Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-movements', dashboard: true },
+  'inventory-summary': { en: 'Stock Summary', id: 'Ringkasan Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-summary', dashboard: true },
   'reports-monthly': {
-    en: 'Generate Reports for a Month', id: 'Buat Laporan Bulanan', file: 'ReportOptions', idFile: 'ReportOptionsId',
+    en: 'Generate Monthly Reports', id: 'Buat Laporan Bulanan', file: 'ReportOptions', idFile: 'ReportOptionsId', dashboard: true,
     vars: function () { return { initial: getReportSelection_() }; }
   },
-  'reports-view': { en: 'Financial Reports', id: 'Laporan Keuangan', file: 'ReportViewer', idFile: 'ReportViewer' },
-  'reports-aging': { en: 'AR and AP Aging', id: 'Umur Piutang dan Utang', file: 'WebAction', idFile: 'WebAction', action: 'aging' },
-  'settings-profile': { en: 'Company Profile', id: 'Profil Perusahaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'profile' },
-  'settings-accounting': { en: 'Accounting Settings', id: 'Pengaturan Akuntansi', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounting' },
-  'settings-accounts': { en: 'Default Accounts', id: 'Akun Bawaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounts' },
-  'settings-system': { en: 'System Settings', id: 'Pengaturan Sistem', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'system' },
-  'system-install': { en: 'Install / Update System', id: 'Instal / Perbarui Sistem', file: 'WebAction', idFile: 'WebAction', action: 'install' },
-  'system-check': { en: 'Check COA & Settings', id: 'Periksa COA & Pengaturan', file: 'WebAction', idFile: 'WebAction', action: 'check' },
-  guide: { en: 'User Guide / SOP', id: 'Panduan Pengguna / SOP', file: 'UserGuide', idFile: 'UserGuideId' }
+  'reports-view': { en: 'View Financial Reports', id: 'Lihat Laporan Keuangan', file: 'ReportViewer', idFile: 'ReportViewer', dashboard: true },
+  'reports-aging': { en: 'AR & AP Aging', id: 'Umur Piutang & Utang', file: 'WebAction', idFile: 'WebAction', action: 'aging', dashboard: true },
+  'settings-profile': { en: 'Company Profile', id: 'Profil Perusahaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'profile', dashboard: true },
+  'settings-accounting': { en: 'Accounting Settings', id: 'Pengaturan Akuntansi', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounting', dashboard: true },
+  'settings-accounts': { en: 'Default Accounts', id: 'Akun Bawaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounts', dashboard: true },
+  'settings-system': { en: 'System Settings', id: 'Pengaturan Sistem', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'system', dashboard: true },
+  'system-install': { en: 'Install / Update System', id: 'Instal / Perbarui Sistem', file: 'WebAction', idFile: 'WebAction', action: 'install', dashboard: true },
+  'system-check': { en: 'Check COA & Settings', id: 'Periksa COA & Pengaturan', file: 'WebAction', idFile: 'WebAction', action: 'check', dashboard: true },
+  guide: { en: 'User Guide / SOP', id: 'Panduan Pengguna / SOP', file: 'UserGuide', idFile: 'UserGuideId', dashboard: true }
 };
 
 const WEB_NAV = [
   {
-    en: 'TRANSACTIONS & INPUT', id: 'TRANSAKSI & INPUT', items: [
-      ['journal-new', 'New Journal Entry', 'Jurnal Baru', 'JV'],
-      ['journals', 'Journal List', 'Daftar Jurnal', 'JL'],
-      ['bank-import', 'Bank & Petty Cash Import', 'Impor Bank & Kas Kecil', 'BI'],
-      ['drafts', 'Draft Management', 'Kelola Draf', 'DM']
+    key: 'accounting', en: 'Accounting', id: 'Akuntansi', type: 'flyout', groups: [
+      {
+        en: 'Transaction & Input', id: 'Transaksi & Input', items: [
+          ['journals', 'Journal List', 'Daftar Jurnal', 'JL'],
+          ['bank-import', 'Bank & Petty Cash', 'Bank & Kas Kecil', 'BC'],
+          ['drafts', 'Draft Management', 'Kelola Draf', 'DM']
+        ]
+      },
+      {
+        en: 'Other Support', id: 'Dukungan Lain', items: [
+          ['parties', 'Parties', 'Pihak', 'PY']
+        ]
+      },
+      {
+        en: 'Reports', id: 'Laporan', items: [
+          ['period-end', 'Period-End Tools', 'Alat Akhir Periode', 'PE'],
+          ['reports-monthly', 'Generate Monthly Reports', 'Buat Laporan Bulanan', 'RM'],
+          ['reports-view', 'View Financial Reports', 'Lihat Laporan Keuangan', 'RV'],
+          ['reports-aging', 'AR & AP Aging', 'Umur Piutang & Utang', 'AG']
+        ]
+      },
+      {
+        en: 'Assets', id: 'Aset', items: [
+          ['inventory-summary', 'Stock Summary', 'Ringkasan Persediaan', 'IS'],
+          ['inventory-movements', 'Process Stock Movements', 'Proses Mutasi Persediaan', 'IM']
+        ]
+      }
     ]
   },
   {
-    en: 'OTHER SUPPORT', id: 'DUKUNGAN LAIN', items: [
-      ['parties', 'Parties (Customer or Supplier)', 'Pihak (Pelanggan atau Pemasok)', 'PY']
-    ]
-  },
-  {
-    en: 'CLOSING & PERIODIC', id: 'PENUTUPAN & PERIODE', items: [
-      ['period-end', 'Period-End Tools', 'Alat Akhir Periode', 'PE']
-    ]
-  },
-  {
-    en: 'REPORTS & ASSETS', id: 'LAPORAN & ASET', items: [
-      ['inventory-movements', 'Process Stock Movements', 'Proses Mutasi Persediaan', 'IM', true],
-      ['inventory-summary', 'Stock Summary', 'Ringkasan Persediaan', 'IS', true],
-      ['reports-monthly', 'Generate Monthly Reports', 'Buat Laporan Bulanan', 'RP', true],
-      ['reports-view', 'View Financial Reports', 'Lihat Laporan Keuangan', 'RV', true],
-      ['reports-aging', 'AR and AP Aging', 'Umur Piutang dan Utang', 'AG', true]
-    ]
-  },
-  {
-    en: 'SYSTEM', id: 'SISTEM', items: [
-      ['settings-profile', 'Company Profile', 'Profil Perusahaan', 'CP', true],
-      ['settings-accounting', 'Accounting Settings', 'Pengaturan Akuntansi', 'AS', true],
-      ['settings-accounts', 'Default Accounts', 'Akun Bawaan', 'DA', true],
-      ['settings-system', 'System Settings', 'Pengaturan Sistem', 'SS', true],
-      ['system-install', 'Install / Update System', 'Instal / Perbarui Sistem', 'IN', true],
-      ['system-check', 'Check COA & Settings', 'Periksa COA & Pengaturan', 'CK', true],
-      ['guide', 'User Guide / SOP', 'Panduan Pengguna / SOP', 'GD', true]
+    key: 'system', en: 'System', id: 'Sistem', type: 'flyout', groups: [
+      {
+        en: 'System', id: 'Sistem', items: [
+          ['settings-profile', 'Company Profile', 'Profil Perusahaan', 'CP'],
+          ['settings-accounting', 'Accounting Settings', 'Pengaturan Akuntansi', 'AS'],
+          ['settings-accounts', 'Default Accounts', 'Akun Bawaan', 'DA'],
+          ['settings-system', 'System Settings', 'Pengaturan Sistem', 'SS'],
+          ['system-install', 'Install / Update System', 'Instal / Perbarui Sistem', 'IN'],
+          ['system-check', 'Check COA & Settings', 'Periksa COA & Pengaturan', 'CK'],
+          ['guide', 'User Guide / SOP', 'Panduan Pengguna / SOP', 'GD']
+        ]
+      }
     ]
   }
 ];
@@ -92,7 +99,7 @@ function doGet(e) {
 function webRenderPage_(def, page, params, lang, raw) {
   const file = lang === 'ID' && def.idFile ? def.idFile : def.file;
   const template = HtmlService.createTemplateFromFile(file);
-  const vars = def.vars ? def.vars() : {};
+  const vars = def.vars ? def.vars(params) : {};
   Object.keys(vars).forEach(key => { template[key] = vars[key]; });
   const baseUrl = ScriptApp.getService().getUrl();
   template.lang = lang;
@@ -121,7 +128,8 @@ function webRenderPage_(def, page, params, lang, raw) {
   shell.baseUrl = baseUrl;
   shell.company = String(readSettings_()['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
   shell.mode = getCompanyMode_();
-  shell.frameSrc = baseUrl + '?page=home&raw=1';
+  const framePage = def.dashboard ? page : 'home';
+  shell.frameSrc = baseUrl + '?page=' + encodeURIComponent(framePage) + '&raw=1';
   return shell.evaluate().setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -136,8 +144,10 @@ function webInjectRawShims_(content, tab, baseUrl) {
   const baseJson = JSON.stringify(String(baseUrl || ''));
   let shim = '<script>' +
     'var WEB_BASE=' + baseJson + ';' +
+    'var WEB_DASH=' + JSON.stringify(Object.keys(WEB_PAGES).filter(function(k){return WEB_PAGES[k].dashboard;})) + ';' +
     'window.webGoPage=function(k,l,q){' +
-    '  q=q||"";' +
+    '  q=q||""; k=String(k||"");' +
+    '  if(WEB_DASH.indexOf(k)>=0 && window.parent && window.parent.webNavigate){ window.parent.webNavigate(k,l,q); return; }' +
     '  if(window.parent && window.parent.webOpenModal) window.parent.webOpenModal(k,l,q);' +
     '  else if(WEB_BASE) window.top.location.href=WEB_BASE+"?page="+encodeURIComponent(k)+(q?"&"+q:"");' +
     '};' +
@@ -147,7 +157,9 @@ function webInjectRawShims_(content, tab, baseUrl) {
     '    e.preventDefault();' +
     '    var href=a.getAttribute("href");' +
     '    var key=decodeURIComponent((href.split("page=")[1]||"").split("&")[0]);' +
-    '    if(window.parent && window.parent.webOpenModal) window.parent.webOpenModal(key, a.textContent.trim());' +
+    '    var extra=href.indexOf("&")>=0?href.slice(href.indexOf("&")+1):"";' +
+    '    if(WEB_DASH.indexOf(key)>=0 && window.parent && window.parent.webNavigate){ window.parent.webNavigate(key,a.textContent.trim(),extra); return; }' +
+    '    if(window.parent && window.parent.webOpenModal) window.parent.webOpenModal(key, a.textContent.trim(), extra);' +
     '    else if(WEB_BASE) window.top.location.href=WEB_BASE+href;' +
     '  }' +
     '});' +
@@ -173,36 +185,45 @@ function webInjectRawShims_(content, tab, baseUrl) {
 function webNavHtml_(page, lang, baseUrl) {
   const esc = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const base = String(baseUrl || '');
-  const label = group => esc(lang === 'ID' ? group.id : group.en);
-  const activeIn = groups => groups.some(group => group.items.some(item => item[0] === page));
-  const body = groups => {
-    let out = '';
-    groups.forEach(group => {
-      out += '<div class="web-dropdown-title">' + label(group) + '</div>';
-      group.items.forEach(item => {
-        const key = item[0], en = item[1], id = item[2], icon = item[3];
-        const text = lang === 'ID' ? id : en;
-        const active = key === page ? ' active' : '';
-        out += '<a class="' + active.trim() + '" href="' + esc(base + '?page=' + encodeURIComponent(key)) +
-          '" data-modal="1" data-page="' + esc(key) + '" data-label="' + esc(text) + '">' +
-          '<span class="web-icon">' + esc(icon) + '</span><span>' + esc(text) + '</span></a>';
-      });
-    });
-    return out;
+  const label = item => esc(lang === 'ID' ? item.id : item.en);
+  const pageInMenu = menu => (menu.groups || []).some(group => (group.items || []).some(item => item[0] === page));
+  const linkAttrs = (key, text) => {
+    const def = WEB_PAGES[key] || {};
+    if (def.dashboard) {
+      return ' href="' + esc(base + '?page=' + encodeURIComponent(key)) + '" data-page-link="1" data-page="' + esc(key) + '"';
+    }
+    return ' href="' + esc(base + '?page=' + encodeURIComponent(key)) + '" data-modal="1" data-page="' + esc(key) + '" data-label="' + esc(text) + '"';
   };
-  const accountingGroups = WEB_NAV.slice(0, 4);
-  const systemGroups = WEB_NAV.slice(4);
   let html = '<a class="web-menu-label web-menu-home' + (page === 'home' ? ' active' : '') +
     '" href="' + esc(base + '?page=home') + '" data-home="1">' +
     (lang === 'ID' ? 'Beranda' : 'Home') + '<span class="web-home-mark"></span></a>';
-  html += '<div class="web-menu' + (activeIn(accountingGroups) ? ' active' : '') + '">' +
-    '<input class="web-menu-toggle" type="checkbox" id="webMenuAccounting">' +
-    '<label class="web-menu-label" for="webMenuAccounting">' + (lang === 'ID' ? 'Akuntansi' : 'Accounting') + '<span class="web-caret">›</span></label>' +
-    '<div class="web-dropdown">' + body(accountingGroups) + '</div></div>';
-  html += '<div class="web-menu' + (activeIn(systemGroups) ? ' active' : '') + '">' +
-    '<input class="web-menu-toggle" type="checkbox" id="webMenuSystem">' +
-    '<label class="web-menu-label" for="webMenuSystem">' + (lang === 'ID' ? 'Sistem' : 'System') + '<span class="web-caret">›</span></label>' +
-    '<div class="web-dropdown">' + body(systemGroups) + '</div></div>';
+
+  WEB_NAV.forEach(menu => {
+    const active = pageInMenu(menu);
+    html += '<div class="web-menu' + (active ? ' active' : '') + '">' +
+      '<input class="web-menu-toggle" type="checkbox" id="webMenu_' + esc(menu.key) + '">' +
+      '<label class="web-menu-label" for="webMenu_' + esc(menu.key) + '">' + label(menu) + '<span class="web-caret">▾</span></label>' +
+      '<div class="web-dropdown">';
+    (menu.groups || []).forEach(group => {
+      const hasSingle = (menu.groups || []).length === 1;
+      if (hasSingle) {
+        (group.items || []).forEach(item => {
+          const key = item[0], text = lang === 'ID' ? item[2] : item[1], icon = item[3];
+          html += '<a class="' + (key === page ? 'active' : '') + '"' + linkAttrs(key, text) + '>' +
+            '<span class="web-icon">' + esc(icon) + '</span><span>' + esc(text) + '</span></a>';
+        });
+      } else {
+        html += '<div class="web-flyout"><div class="web-flyout-label">' + label(group) + '<span class="web-flyout-arrow">›</span></div><div class="web-submenu">';
+        (group.items || []).forEach(item => {
+          const key = item[0], text = lang === 'ID' ? item[2] : item[1], icon = item[3];
+          html += '<a class="' + (key === page ? 'active' : '') + '"' + linkAttrs(key, text) + '>' +
+            '<span class="web-icon">' + esc(icon) + '</span><span>' + esc(text) + '</span></a>';
+        });
+        html += '</div></div>';
+      }
+    });
+    html += '</div></div>';
+  });
   return html;
 }
 

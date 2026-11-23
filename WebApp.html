@@ -62,7 +62,7 @@
       if (!key || key === 'home') { webCloseModal(); return; }
       const modal = document.getElementById('webModal');
       const frame = document.getElementById('webModalFrame');
-      document.getElementById('webModalTitle').textContent = label || INITIAL_TITLE || key;
+      document.getElementById('webModalTitle').textContent = label || key;
       const src = webPageUrl(key, true, extra);
       if (frame.getAttribute('src') !== src) frame.src = src;
       modal.hidden = false;
@@ -74,7 +74,19 @@
       const frame = document.getElementById('webModalFrame');
       modal.hidden = true;
       frame.src = 'about:blank';
-      try { window.history.replaceState(null, '', webPageUrl('home', false)); } catch (e) {}
+      try { window.history.replaceState(null, '', webPageUrl(INITIAL_PAGE || 'home', false)); } catch (e) {}
+    }
+    function webNavigate(key, label, extra) {
+      key = String(key || 'home');
+      webCloseModal();
+      const frame = document.getElementById('webFrame');
+      const src = webPageUrl(key, true, extra);
+      if (frame.getAttribute('src') !== src) frame.src = src;
+      closeMenus();
+      document.querySelectorAll('[data-page-link]').forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('data-page') === key);
+      });
+      try { window.history.replaceState(null, '', webPageUrl(key, false, extra)); } catch (e) {}
     }
     function webSetLang(lang) {
       google.script.run
@@ -91,6 +103,12 @@
     });
     document.addEventListener('click', function (event) {
       const target = event.target;
+      const pageLink = target.closest && target.closest('a[data-page-link]');
+      if (pageLink) {
+        event.preventDefault();
+        webNavigate(pageLink.getAttribute('data-page'), pageLink.getAttribute('data-label'), pageLink.getAttribute('data-extra'));
+        return;
+      }
       const modalLink = target.closest && target.closest('a[data-modal]');
       if (modalLink) {
         event.preventDefault();
@@ -100,7 +118,7 @@
       const homeLink = target.closest && target.closest('a[data-home]');
       if (homeLink) {
         event.preventDefault();
-        webCloseModal();
+        webNavigate('home');
         return;
       }
       if (target.closest && target.closest('.web-modal-close, .web-modal-backdrop')) {
@@ -112,7 +130,10 @@
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') { webCloseModal(); closeMenus(); }
     });
-    if (INITIAL_PAGE && INITIAL_PAGE !== 'home') webOpenModal(INITIAL_PAGE, INITIAL_TITLE);
+    if (INITIAL_PAGE && INITIAL_PAGE !== 'home') {
+      const modalOnly = !document.querySelector('[data-page-link][data-page="' + INITIAL_PAGE + '"]');
+      if (modalOnly) webOpenModal(INITIAL_PAGE, INITIAL_TITLE);
+    }
   </script>
 </body>
 </html>
