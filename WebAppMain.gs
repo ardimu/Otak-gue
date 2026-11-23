@@ -54,11 +54,6 @@ const WEB_NAV = [
         ]
       },
       {
-        en: 'Other Support', id: 'Dukungan Lain', items: [
-          ['parties', 'Parties', 'Pihak', 'PY']
-        ]
-      },
-      {
         en: 'Reports', id: 'Laporan', items: [
           ['period-end', 'Period-End Tools', 'Alat Akhir Periode', 'PE'],
           ['reports-view', 'Financial Report', 'Laporan Keuangan', 'FR'],
@@ -69,6 +64,11 @@ const WEB_NAV = [
         en: 'Assets', id: 'Aset', items: [
           ['inventory-summary', 'Stock Summary', 'Ringkasan Persediaan', 'IS'],
           ['inventory-movements', 'Process Stock Movements', 'Proses Mutasi Persediaan', 'IM']
+        ]
+      },
+      {
+        en: 'Other Support', id: 'Dukungan Lain', items: [
+          ['parties', 'Parties', 'Pihak', 'PY']
         ]
       }
     ]
@@ -482,6 +482,28 @@ function webGetReportData(payload) {
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }
+}
+
+function webSearchItems_(lang) {
+  const id = lang === 'ID';
+  const items = [];
+  WEB_NAV.forEach(menu => {
+    (menu.groups || []).forEach(group => {
+      (group.items || []).forEach(item => {
+        const key = item[0];
+        const def = WEB_PAGES[key];
+        if (!def) return;
+        items.push({
+          key: key,
+          label: id ? item[2] : item[1],
+          icon: item[3],
+          group: id ? group.id : group.en,
+          mode: def.dashboard ? 'dashboard' : 'modal'
+        });
+      });
+    });
+  });
+  return items;
 }
 
 function webListJournals(options) {

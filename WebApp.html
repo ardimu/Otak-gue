@@ -17,7 +17,10 @@
         </div>
       </div>
       <span class="web-company"><?= company ?></span>
-      <div class="web-search"><?= lang === 'ID' ? 'Cari menu, akun, atau transaksi…' : 'Search menus, accounts, or transactions…' ?></div>
+      <div class="web-search">
+        <input type="search" id="webSearch" placeholder="<?= lang === 'ID' ? 'Cari menu…' : 'Search menu…' ?>" autocomplete="off" aria-label="Search menu">
+        <div class="web-search-results" id="webSearchResults" hidden></div>
+      </div>
       <div class="web-top-actions">
         <span class="web-mode"><?= mode ?></span>
         <div class="web-lang">
@@ -49,6 +52,7 @@
     const WEB_BASE = <?!= JSON.stringify(baseUrl) ?>;
     const INITIAL_PAGE = <?!= JSON.stringify(page) ?>;
     const INITIAL_TITLE = <?!= JSON.stringify(title) ?>;
+    const SEARCH_ITEMS = <?!= JSON.stringify(webSearchItems_(lang)) ?>;
 
     function webPageUrl(key, raw, extra) {
       const suffix = extra ? '&' + String(extra).replace(/^[?&]+/, '') : '';
@@ -88,6 +92,56 @@
       });
       try { window.history.replaceState(null, '', webPageUrl(key, false, extra)); } catch (e) {}
     }
+
+    (function initSearch() {
+      const input = document.getElementById('webSearch');
+      const box = document.getElementById('webSearchResults');
+      let active = -1;
+      function hide() { box.hidden = true; box.innerHTML = ''; active = -1; }
+      function items() { return Array.prototype.slice.call(box.querySelectorAll('.web-search-item')); }
+      function openPage(item) {
+        hide(); input.value = '';
+        if (item.mode === 'dashboard') webNavigate(item.key, item.label, item.extra);
+        else webOpenModal(item.key, item.label, item.extra);
+      }
+      function render(q) {
+        const needle = String(q || '').trim().toLowerCase();
+        if (!needle) { hide(); return; }
+        const hits = SEARCH_ITEMS.filter(function (it) {
+          return (it.label + ' ' + it.group).toLowerCase().indexOf(needle) >= 0;
+        }).slice(0, 8);
+        if (!hits.length) {
+          box.innerHTML = '<div class="web-search-empty"><?= lang === "ID" ? "Menu tidak ditemukan." : "No menu found." ?></div>';
+          box.hidden = false; active = -1; return;
+        }
+        box.innerHTML = hits.map(function (it, i) {
+          return '<a href="#" class="web-search-item" data-i="' + i + '"><span class="web-icon">' + it.icon + '</span><span>' + it.label + '</span><small>' + it.group + '</small></a>';
+        }).join('');
+        box.hidden = false; active = 0;
+        items().forEach(function (el) { el.classList.toggle('active', Number(el.dataset.i) === 0); });
+        box.querySelectorAll('.web-search-item').forEach(function (el) {
+          el.addEventListener('mousedown', function (e) { e.preventDefault(); openPage(hits[Number(el.dataset.i)]); });
+        });
+      }
+      input.addEventListener('input', function (e) { render(e.target.value); });
+      input.addEventListener('keydown', function (e) {
+        const list = items();
+        if (e.key === 'Escape') { hide(); input.blur(); return; }
+        if (!list.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, list.length - 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); }
+        else if (e.key === 'Enter') {
+          e.preventDefault();
+          const q = input.value.trim().toLowerCase();
+          const hits = SEARCH_ITEMS.filter(function (it) { return (it.label + ' ' + it.group).toLowerCase().indexOf(q) >= 0; }).slice(0, 8);
+          if (hits[active >= 0 ? active : 0]) openPage(hits[active >= 0 ? active : 0]);
+          return;
+        } else return;
+        list.forEach(function (el, i) { el.classList.toggle('active', i === active); });
+        if (list[active]) list[active].scrollIntoView({ block: 'nearest' });
+      });
+      document.addEventListener('click', function (e) { if (!e.target.closest('.web-search')) hide(); });
+    })();
     function webSetLang(lang) {
       google.script.run
         .withSuccessHandler(function () { window.top.location.href = webPageUrl('home', false); })
