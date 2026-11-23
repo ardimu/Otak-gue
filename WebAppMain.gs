@@ -298,7 +298,7 @@ function webGetDashboard() {
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
     const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
     let cash = 0, income = 0, expense = 0, incomeYtd = 0, expenseYtd = 0, drafts = 0;
-    let tbEnd = 0, bsAssets = 0, bsLiabEq = 0;
+    let tbEnd = 0, bsAssets = 0, bsLiab = 0, bsEq = 0;
     const recentMap = new Map();
     const arLines = [], apLines = [];
 
@@ -330,9 +330,9 @@ function webGetDashboard() {
       if (rowPeriod <= period) {
         tbEnd += debit - credit;
         if (sec === 'CA' || sec === 'NCA') bsAssets += debit - credit;
-        else if (sec === 'CL' || sec === 'NCL') bsLiabEq += credit - debit;
-        else if (sec === 'EQ') bsLiabEq += credit - debit;
-        else if (sec) bsLiabEq += credit - debit; // P&L in equity until closed
+        else if (sec === 'CL' || sec === 'NCL') bsLiab += credit - debit;
+        else if (sec === 'EQ') bsEq += credit - debit;
+        else if (sec) bsEq += credit - debit; // P&L in equity until closed
       }
 
       if (id) {
@@ -376,7 +376,7 @@ function webGetDashboard() {
       }));
 
     const tbDiff = Math.abs(r2_(tbEnd));
-    const bsDiff = Math.abs(r2_(bsAssets - bsLiabEq));
+    const bsDiff = Math.abs(r2_(bsAssets - (bsLiab + bsEq)));
     const checks = [];
     if (tbDiff > TOLERANCE || bsDiff > TOLERANCE) checks.push({ level: 'danger', text: tr_('Ledger or balance sheet is out of balance. Run Check COA & Settings.', 'Buku besar atau neraca tidak seimbang. Jalankan Periksa COA & Pengaturan.') });
     if (drafts) checks.push({ level: 'warn', text: tr_(drafts + ' journal draft(s) are waiting to be posted.', drafts + ' draf jurnal menunggu untuk diposting.') });
@@ -390,7 +390,7 @@ function webGetDashboard() {
       hasData: values.length > 0, cash: r2_(cash), income: r2_(income), expense: r2_(expense), net: net,
       incomeYtd: r2_(incomeYtd), expenseYtd: r2_(expenseYtd),
       ar: arTotals.open, arOverdue: arTotals.overdue, ap: apTotals.open, apOverdue: apTotals.overdue,
-      assets: r2_(bsAssets), liabilities: 0, equity: r2_(bsLiabEq), drafts: drafts, recent: recent, checks: checks,
+      assets: r2_(bsAssets), liabilities: r2_(bsLiab), equity: r2_(bsEq), drafts: drafts, recent: recent, checks: checks,
       updatedAt: new Date().toISOString()
     };
     webCachePut_(WEB_CACHE_DASH, result, 120);
