@@ -41,13 +41,13 @@
   <div class="rv-shell">
     <div class="rv-head">
       <div>
-        <div class="rv-kicker">FINANCIAL REPORT</div>
-        <h1><?= lang === 'ID' ? 'Laporan Keuangan' : 'Financial Reports' ?></h1>
+        <div class="rv-kicker" id="rvKicker">FINANCIAL REPORT</div>
+        <h1 id="rvTitle"><?= lang === 'ID' ? 'Laporan Keuangan' : 'Financial Reports' ?></h1>
         <p id="rvMeta"></p>
       </div>
       <div class="rv-actions">
         <span class="rv-stamp" id="rvStamp"></span>
-        <a href="?page=reports-monthly"><?= lang === 'ID' ? 'Buat ulang' : 'Regenerate' ?></a>
+        <a href="?page=reports-view" id="rvAllLink"><?= lang === 'ID' ? 'Semua laporan keuangan' : 'All financial reports' ?></a>
       </div>
     </div>
     <div class="rv-warn" id="rvWarn" hidden></div>
@@ -59,11 +59,18 @@
   <script>
     const LAN = <?!= JSON.stringify(lang) ?>;
     const PERIOD = <?!= JSON.stringify(period || '') ?>;
-    const KEYS = <?!= JSON.stringify(String(typeof params === 'undefined' ? '' : (params.keys || '')).split(',').filter(Boolean)) ?>;
+    const KEYS = <?!= JSON.stringify(String(typeof reportKeys !== 'undefined' && reportKeys ? reportKeys : (typeof params === 'undefined' ? '' : (params.keys || ''))).split(',').filter(Boolean)) ?>;
+    const DEFAULT_FIN_KEYS = ['is','bs','eq','cf'];
     const $ = id => document.getElementById(id);
     const LABELS = LAN === 'ID'
       ? { tb: 'Neraca Saldo', gl: 'Buku Besar', is: 'Laba Rugi', bs: 'Neraca', eq: 'Perubahan Ekuitas', cf: 'Arus Kas' }
       : { tb: 'Trial Balance', gl: 'General Ledger', is: 'Income Statement', bs: 'Balance Sheet', eq: 'Equity Changes', cf: 'Cash Flow' };
+    const TITLE = KEYS.length === 1
+      ? (LABELS[KEYS[0]] || (LAN === 'ID' ? 'Laporan Keuangan' : 'Financial Report'))
+      : (LAN === 'ID' ? 'Laporan Keuangan' : 'Financial Report');
+    $('rvTitle').textContent = TITLE;
+    $('rvKicker').textContent = KEYS.length === 1 ? (LAN === 'ID' ? 'TRANSAKSI & INPUT' : 'TRANSACTIONS & INPUT') : (LAN === 'ID' ? 'LAPORAN' : 'REPORTS');
+    if (KEYS.length === 1) $('rvAllLink').hidden = true;
     let DATA = null, ACTIVE = '';
 
     function esc(value) {
@@ -82,10 +89,11 @@
       $('rvCard').innerHTML = '<div class="rv-empty">' + esc((error && error.message) || error || 'Error') + '</div>';
     }
     function load() {
+      const effective = KEYS.length ? KEYS : DEFAULT_FIN_KEYS;
       const payload = {
         period: PERIOD,
-        mode: KEYS.length ? 'custom' : 'all',
-        reports: KEYS,
+        mode: 'custom',
+        reports: effective,
         web: true
       };
       google.script.run
@@ -103,6 +111,8 @@
       const warnings = DATA.warnings || [];
       $('rvWarn').hidden = !warnings.length;
       $('rvWarn').innerHTML = warnings.map(w => esc(w)).join('<br>');
+      const showTabs = DATA.keys.length > 1;
+      $('rvTabs').style.display = showTabs ? '' : 'none';
       $('rvTabs').innerHTML = DATA.keys.map(key =>
         '<button type="button" class="rv-tab" data-key="' + esc(key) + '">' + esc(LABELS[key] || key) + '</button>'
       ).join('');

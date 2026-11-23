@@ -19,11 +19,18 @@ const WEB_PAGES = {
   'period-end': { en: 'Period-End Tools', id: 'Alat Akhir Periode', file: 'PeriodEnd', idFile: 'PeriodEndId', dashboard: true },
   'inventory-movements': { en: 'Process Stock Movements', id: 'Proses Mutasi Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-movements', dashboard: true },
   'inventory-summary': { en: 'Stock Summary', id: 'Ringkasan Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-summary', dashboard: true },
-  'reports-monthly': {
-    en: 'Generate Monthly Reports', id: 'Buat Laporan Bulanan', file: 'ReportOptions', idFile: 'ReportOptionsId', dashboard: true,
-    vars: function () { return { initial: getReportSelection_() }; }
+  'reports-view': {
+    en: 'Financial Report', id: 'Laporan Keuangan', file: 'ReportViewer', idFile: 'ReportViewer', dashboard: true,
+    vars: function (params) { return { reportKeys: String((params && params.keys) || 'is,bs,eq,cf') }; }
   },
-  'reports-view': { en: 'View Financial Reports', id: 'Lihat Laporan Keuangan', file: 'ReportViewer', idFile: 'ReportViewer', dashboard: true },
+  'trial-balance': {
+    en: 'Trial Balance', id: 'Neraca Saldo', file: 'ReportViewer', idFile: 'ReportViewer', dashboard: true,
+    vars: function () { return { reportKeys: 'tb' }; }
+  },
+  'general-ledger': {
+    en: 'General Ledger', id: 'Buku Besar', file: 'ReportViewer', idFile: 'ReportViewer', dashboard: true,
+    vars: function () { return { reportKeys: 'gl' }; }
+  },
   'reports-aging': { en: 'AR & AP Aging', id: 'Umur Piutang & Utang', file: 'WebAction', idFile: 'WebAction', action: 'aging', dashboard: true },
   'settings-profile': { en: 'Company Profile', id: 'Profil Perusahaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'profile', dashboard: true },
   'settings-accounting': { en: 'Accounting Settings', id: 'Pengaturan Akuntansi', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounting', dashboard: true },
@@ -41,7 +48,9 @@ const WEB_NAV = [
         en: 'Transaction & Input', id: 'Transaksi & Input', items: [
           ['journals', 'Journal List', 'Daftar Jurnal', 'JL'],
           ['bank-import', 'Bank & Petty Cash', 'Bank & Kas Kecil', 'BC'],
-          ['drafts', 'Draft Management', 'Kelola Draf', 'DM']
+          ['drafts', 'Draft Management', 'Kelola Draf', 'DM'],
+          ['trial-balance', 'Trial Balance', 'Neraca Saldo', 'TB'],
+          ['general-ledger', 'General Ledger', 'Buku Besar', 'GL']
         ]
       },
       {
@@ -52,8 +61,7 @@ const WEB_NAV = [
       {
         en: 'Reports', id: 'Laporan', items: [
           ['period-end', 'Period-End Tools', 'Alat Akhir Periode', 'PE'],
-          ['reports-monthly', 'Generate Monthly Reports', 'Buat Laporan Bulanan', 'RM'],
-          ['reports-view', 'View Financial Reports', 'Lihat Laporan Keuangan', 'RV'],
+          ['reports-view', 'Financial Report', 'Laporan Keuangan', 'FR'],
           ['reports-aging', 'AR & AP Aging', 'Umur Piutang & Utang', 'AG']
         ]
       },
@@ -108,6 +116,7 @@ function webRenderPage_(def, page, params, lang, raw) {
   template.period = String(params.period || getReportSelection_().period);
   template.action = def.action || '';
   template.tab = String(params.tab || def.tab || '');
+  template.reportKeys = String(params.keys || template.reportKeys || (vars.reportKeys || ''));
   template.webMode = true;
   template.baseUrl = baseUrl;
   template.company = String(readSettings_()['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
@@ -426,7 +435,8 @@ function webGetReportData(payload) {
     }
     const mode = String(p.mode || 'all') === 'custom' ? 'custom' : 'all';
     const requested = Array.isArray(p.reports) ? p.reports.filter(key => REPORT_KEYS.indexOf(key) >= 0) : [];
-    const keys = mode === 'all' ? REPORT_KEYS.slice() : requested;
+    const defaultKeys = REPORT_KEYS.filter(key => key !== 'tb' && key !== 'gl');
+    const keys = mode === 'all' ? defaultKeys : requested;
     if (!keys.length) return { success: false, message: 'Choose at least one report.' };
 
     const settings = readSettings_();
