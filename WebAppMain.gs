@@ -74,15 +74,23 @@ const WEB_NAV = [
     ]
   },
   {
-    key: 'system', en: 'System', id: 'Sistem', type: 'flyout', groups: [
+    key: 'system', en: 'System', id: 'Sistem', type: 'sections', groups: [
       {
-        en: 'System', id: 'Sistem', items: [
+        en: 'Settings', id: 'Pengaturan', items: [
           ['settings-profile', 'Company Profile', 'Profil Perusahaan', 'CP'],
           ['settings-accounting', 'Accounting Settings', 'Pengaturan Akuntansi', 'AS'],
           ['settings-accounts', 'Default Accounts', 'Akun Bawaan', 'DA'],
-          ['settings-system', 'System Settings', 'Pengaturan Sistem', 'SS'],
+          ['settings-system', 'System Settings', 'Pengaturan Sistem', 'SS']
+        ]
+      },
+      {
+        en: 'Maintenance', id: 'Pemeliharaan', items: [
           ['system-install', 'Install / Update System', 'Instal / Perbarui Sistem', 'IN'],
-          ['system-check', 'Check COA & Settings', 'Periksa COA & Pengaturan', 'CK'],
+          ['system-check', 'Check COA & Settings', 'Periksa COA & Pengaturan', 'CK']
+        ]
+      },
+      {
+        en: 'Help', id: 'Bantuan', items: [
           ['guide', 'User Guide / SOP', 'Panduan Pengguna / SOP', 'GD']
         ]
       }
@@ -212,8 +220,18 @@ function webNavHtml_(page, lang, baseUrl) {
     html += '<div class="web-menu' + (active ? ' active' : '') + '">' +
       '<input class="web-menu-toggle" type="checkbox" id="webMenu_' + esc(menu.key) + '">' +
       '<label class="web-menu-label" for="webMenu_' + esc(menu.key) + '">' + label(menu) + '<span class="web-caret">▾</span></label>' +
-      '<div class="web-dropdown">';
-    (menu.groups || []).forEach(group => {
+      '<div class="web-dropdown' + (menu.type === 'sections' ? ' web-dropdown-sections' : '') + '">';
+    (menu.groups || []).forEach((group, gi) => {
+      if (menu.type === 'sections') {
+        if (gi > 0) html += '<div class="web-dropdown-sep"></div>';
+        html += '<div class="web-dropdown-title">' + label(group) + '</div>';
+        (group.items || []).forEach(item => {
+          const key = item[0], text = lang === 'ID' ? item[2] : item[1], icon = item[3];
+          html += '<a class="' + (key === page ? 'active' : '') + '"' + linkAttrs(key, text) + '>' +
+            '<span class="web-icon">' + esc(icon) + '</span><span>' + esc(text) + '</span></a>';
+        });
+        return;
+      }
       const hasSingle = (menu.groups || []).length === 1;
       if (hasSingle) {
         (group.items || []).forEach(item => {
