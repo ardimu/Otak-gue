@@ -1652,35 +1652,62 @@ function journalPeriodRange_(options) {
   };
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: filtered Journal reads scan Period/Status columns first, then fetch only matching full rows.
+function journalRowPeriodFromScan_(dateValue, periodValue) {
+  const value = Number(periodValue) || 0;
+  if (value) return value;
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  if (isNaN(date.getTime())) return 0;
+  return date.getFullYear() * 100 + date.getMonth() + 1;
+}
+
+function readJournalRowsByNumbersFull_(sheet, numbers) {
+  const sorted = (numbers || []).slice().sort((a, b) => a - b);
+  const out = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+    sheet.getRange(sorted[i], 1, j - i + 1, JOURNAL_HEADERS.length).getValues().forEach(row => out.push(row));
+    i = j + 1;
+  }
+  return out;
+}
+
 function readJournalRows_(options) {
   const opt = options || {};
   const range = journalPeriodRange_(opt);
   const status = String(opt.status || 'ALL').toUpperCase();
   const archived = new Set(journalArchivedYears_());
+  const filtered = status !== 'ALL' || range.from > 0 || range.to < 999999;
+  const collect = (sheet, skipArchived) => {
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    const count = sheet.getLastRow() - 1;
+    if (!filtered) {
+      return sheet.getRange(2, 1, count, JOURNAL_HEADERS.length).getValues().filter(row => {
+        const period = journalRowPeriod_(row);
+        return !skipArchived || !archived.has(Math.floor(period / 100));
+      });
+    }
+    const periodVals = sheet.getRange(2, COL.period + 1, count, 1).getValues();
+    const dateVals = sheet.getRange(2, COL.date + 1, count, 1).getValues();
+    const statusVals = status !== 'ALL' ? sheet.getRange(2, COL.status + 1, count, 1).getValues() : null;
+    const numbers = [];
+    for (let i = 0; i < count; i++) {
+      const period = journalRowPeriodFromScan_(dateVals[i][0], periodVals[i][0]);
+      if (period < range.from || period > range.to) continue;
+      if (skipArchived && archived.has(Math.floor(period / 100))) continue;
+      if (statusVals && String(statusVals[i][0] || '').toUpperCase() !== status) continue;
+      numbers.push(i + 2);
+    }
+    return readJournalRowsByNumbersFull_(sheet, numbers);
+  };
   const out = [];
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const active = ss.getSheetByName(SHEETS.JOURNAL);
-  if (active && active.getLastRow() > 1) {
-    const values = active.getRange(2, 1, active.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
-    values.forEach(row => {
-      const period = journalRowPeriod_(row);
-      if (period < range.from || period > range.to) return;
-      if (archived.has(Math.floor(period / 100))) return;
-      if (status !== 'ALL' && String(row[COL.status] || '').toUpperCase() !== status) return;
-      out.push(row);
-    });
-  }
+  out.push.apply(out, collect(ss.getSheetByName(SHEETS.JOURNAL), true));
   archived.forEach(year => {
     if (year * 100 + 12 < range.from || year * 100 + 1 > range.to) return;
-    const sheet = ss.getSheetByName(journalArchiveSheetName_(year));
-    if (!sheet || sheet.getLastRow() < 2) return;
-    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
-    values.forEach(row => {
-      const period = journalRowPeriod_(row);
-      if (period < range.from || period > range.to) return;
-      if (status !== 'ALL' && String(row[COL.status] || '').toUpperCase() !== status) return;
-      out.push(row);
-    });
+    out.push.apply(out, collect(ss.getSheetByName(journalArchiveSheetName_(year)), false));
   });
   return out;
 }

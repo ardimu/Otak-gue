@@ -62,14 +62,22 @@ function computeReports_(posted, coa, period, m0, meta) {
   const prev = p => (p % 100 === 1 ? (Math.floor(p / 100) - 1) * 100 + 12 : p - 1);
   const fysOf = p => { const y = Math.floor(p / 100), mo = p % 100; return (mo >= m0 ? y : y - 1) * 100 + m0; };
   const fys = fysOf(period), pm = prev(period);
+  // OPTIMIZED FOR >100K ROWS / SCALABLE: repeated account/period net lookups are memoized without changing report math.
+  const netCache = new Map(), netTypeCache = new Map();
   const net = (code, from, to, excl) => {
+    const key = code + '|' + from + '|' + to + '|' + (excl ? excl.join(',') : '');
+    if (netCache.has(key)) return netCache.get(key);
     let s = 0;
     (tx.get(code) || []).forEach(r => { if (r.period >= from && r.period <= to && !(excl && excl.includes(r.type))) s += r.debit - r.credit; });
+    netCache.set(key, s);
     return s;
   };
   const netType = (code, from, to, type) => {
+    const key = code + '|' + from + '|' + to + '|' + type;
+    if (netTypeCache.has(key)) return netTypeCache.get(key);
     let s = 0;
     (tx.get(code) || []).forEach(r => { if (r.period >= from && r.period <= to && r.type === type) s += r.debit - r.credit; });
+    netTypeCache.set(key, s);
     return s;
   };
   const sum = (list, f) => list.reduce((s, a) => s + f(a), 0);

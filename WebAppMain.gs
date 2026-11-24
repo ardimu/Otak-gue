@@ -481,8 +481,8 @@ function webBuildDashboardSummary_(ctx) {
     const asOf = webPeriodAsOf_(period);
     while (ai < allAr.length && allAr[ai].date <= asOf) activeAr.push(allAr[ai++]);
     while (pi < allAp.length && allAp[pi].date <= asOf) activeAp.push(allAp[pi++]);
-    const arTotals = agingReports_(agingBuild_(activeAr, 'AR', asOf), 'AR', asOf, { company: company }).totals;
-    const apTotals = agingReports_(agingBuild_(activeAp, 'AP', asOf), 'AP', asOf, { company: company }).totals;
+    const arTotals = agingTotalsOnly_(activeAr, 'AR', asOf);
+    const apTotals = agingTotalsOnly_(activeAp, 'AP', asOf);
     const recent = Array.from(b.recent.values())
       .sort((a, b2) => (b2.date - a.date) || String(b2.journalId).localeCompare(String(a.journalId)))
       .slice(0, 6)
@@ -500,6 +500,7 @@ function webBuildDashboardSummary_(ctx) {
   if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, WEB_DASH_SUMMARY_HEADERS.length).clearContent();
   if (rows.length) sheet.getRange(2, 1, rows.length, WEB_DASH_SUMMARY_HEADERS.length).setValues(rows);
   webWriteReportSummary_(reportRows);
+  PropertiesService.getDocumentProperties().setProperty('WEB_DASH_SUMMARY_REV', webDataRevision_('journals'));
   return rows;
 }
 
@@ -610,12 +611,46 @@ function webCachePut_(key, value, seconds) {
     if (raw.length < 95000) CacheService.getScriptCache().put(key, raw, seconds || 120);
   } catch (e) {}
 }
+// OPTIMIZED FOR >100K ROWS / SCALABLE: large report/list payloads are chunked so repeat loads stay cached.
+function webCachePutLarge_(key, value, seconds) {
+  try {
+    const raw = JSON.stringify(value);
+    if (raw.length < 95000) {
+      webCachePut_(key, value, seconds);
+      return;
+    }
+    const cache = CacheService.getScriptCache();
+    const size = 80000;
+    const parts = [];
+    for (let i = 0; i < raw.length; i += size) parts.push(raw.substr(i, size));
+    cache.put(key + '#n', String(parts.length), seconds || 120);
+    parts.forEach((part, index) => cache.put(key + '#' + index, part, seconds || 120));
+  } catch (e) {}
+}
+function webCacheGetLarge_(key) {
+  const direct = webCacheGet_(key);
+  if (direct !== null) return direct;
+  try {
+    const cache = CacheService.getScriptCache();
+    const rawCount = cache.get(key + '#n');
+    if (!rawCount) return null;
+    const count = Number(rawCount) || 0;
+    if (!count) return null;
+    const parts = [];
+    for (let i = 0; i < count; i++) {
+      const part = cache.get(key + '#' + i);
+      if (part === null) return null;
+      parts.push(part);
+    }
+    return JSON.parse(parts.join(''));
+  } catch (e) { return null; }
+}
 function webCacheJournalsKey_(status, limit) {
   return webCacheKey_('journals:' + String(status || 'ALL') + ':' + Number(limit || 0), [getLanguage()]);
 }
 function webJournalListCacheKey_(opts) {
   const o = opts || {};
-  return webCacheKey_('journals:list', [getLanguage(), String(o.status || 'ALL'), String(o.search || ''), String(o.startDate || ''), String(o.endDate || ''), String(o.journalId || ''), Number(o.page) || 1, Number(o.pageSize) || 50, o.all ? 1 : 0]);
+  return webCacheKey_('journals:list', [getLanguage(), String(o.status || 'ALL'), String(o.search || ''), String(o.startDate || ''), String(o.endDate || ''), String(o.journalId || '')]);
 }
 function webDashboardCacheKey_(period) {
   return webCacheKey_('dashboard', [getLanguage(), String(period || '')]);
@@ -734,6 +769,7 @@ function webSerializeReport_(value) {
   return value;
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: report payloads are cached per period/key set and invalidated by journal revision.
 function webGetReportData(payload) {
   try {
     const p = payload || {};
@@ -746,6 +782,10 @@ function webGetReportData(payload) {
     const defaultKeys = REPORT_KEYS.filter(key => key !== 'tb' && key !== 'gl');
     const keys = mode === 'all' ? defaultKeys : requested;
     if (!keys.length) return { success: false, message: 'Choose at least one report.' };
+
+    const cacheKey = webCacheKey_('journals:report', [getLanguage(), periodText, mode, keys.join(',')]);
+    const cached = webCacheGetLarge_(cacheKey);
+    if (cached) return cached;
 
     const ctx = webRequestContext_();
     const settings = ctx.settings;
@@ -763,7 +803,7 @@ function webGetReportData(payload) {
     const all = computeReports_(loadPostedForWebReports_(period), ctx.coa, period, m0, meta);
     const reports = {};
     keys.forEach(key => { reports[key] = webSerializeReport_(all[key]); });
-    return {
+    const result = {
       success: true,
       period: periodText,
       keys: keys,
@@ -771,6 +811,8 @@ function webGetReportData(payload) {
       warnings: webSerializeReport_(all.warnings || []),
       generatedAt: new Date().toISOString()
     };
+    webCachePutLarge_(cacheKey, result, 120);
+    return result;
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }
@@ -798,7 +840,96 @@ function webSearchItems_(lang) {
   return items;
 }
 
-// OPTIMIZED FOR >100K ROWS / SCALABLE: journal filters, grouping and pagination run server-side with archived-year aware reads.
+// OPTIMIZED FOR >100K ROWS / SCALABLE: Journal List aggregates only 12 needed columns and memoizes date formatting per execution.
+function webJournalDate_(value, cache, zone, withTime) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date.getTime())) return withTime ? String(value) : '';
+  const key = (withTime ? 't:' : 'd:') + date.getTime();
+  if (cache.has(key)) return cache.get(key);
+  const text = Utilities.formatDate(date, zone, withTime ? 'yyyy-MM-dd HH:mm' : 'yyyy-MM-dd');
+  cache.set(key, text);
+  return text;
+}
+
+function webListJournalGroups_(status, startDate, endDate, journalId, search) {
+  const cols = [COL.id, COL.date, COL.period, COL.status, COL.type, COL.description, COL.reference, COL.party, COL.debit, COL.credit, COL.postedAt, COL.updatedAt];
+  const cache = new Map();
+  const zone = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  const archived = new Set(journalArchivedYears_());
+  const grouped = {};
+  const collect = (sheet, skipArchived) => {
+    if (!sheet) return;
+    const last = sheet.getLastRow();
+    if (last < 2) return;
+    const count = last - 1;
+    const vals = {};
+    cols.forEach(col => { vals[col] = sheet.getRange(2, col + 1, count, 1).getValues(); });
+    for (let i = 0; i < count; i++) {
+      const id = String(vals[COL.id][i][0] || '').trim();
+      if (!id) continue;
+      const rowStatus = String(vals[COL.status][i][0] || '').toUpperCase();
+      if (status !== 'ALL' && rowStatus !== status) continue;
+      const isoDate = webJournalDate_(vals[COL.date][i][0], cache, zone, false);
+      if (skipArchived) {
+        const period = journalRowPeriodFromScan_(vals[COL.date][i][0], vals[COL.period][i][0]);
+        if (archived.has(Math.floor(period / 100))) continue;
+      }
+      if (!grouped[id]) {
+        grouped[id] = {
+          journalId: id, date: isoDate, journalType: '', status: rowStatus,
+          description: '', reference: '', party: '', debit: 0, credit: 0,
+          lineCount: 0, postedAt: '', updatedAt: '', searchText: ''
+        };
+      }
+      const entry = grouped[id];
+      entry.searchText += [id, rowStatus, vals[COL.type][i][0], vals[COL.description][i][0], vals[COL.reference][i][0], vals[COL.party][i][0]].map(v => String(v || '').toLowerCase()).join('\u0001') + '\u0002';
+      entry.lineCount += 1;
+      entry.debit += Number(vals[COL.debit][i][0]) || 0;
+      entry.credit += Number(vals[COL.credit][i][0]) || 0;
+      if (!entry.journalType) entry.journalType = String(vals[COL.type][i][0] || '');
+      if (!entry.description && vals[COL.description][i][0]) entry.description = String(vals[COL.description][i][0]);
+      if (!entry.reference && vals[COL.reference][i][0]) entry.reference = String(vals[COL.reference][i][0]);
+      if (!entry.party && vals[COL.party][i][0]) entry.party = String(vals[COL.party][i][0]);
+      if (!entry.postedAt && vals[COL.postedAt][i][0]) entry.postedAt = webJournalDate_(vals[COL.postedAt][i][0], cache, zone, true);
+      if (!entry.updatedAt && vals[COL.updatedAt][i][0]) entry.updatedAt = webJournalDate_(vals[COL.updatedAt][i][0], cache, zone, true);
+    }
+  };
+  collect(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.JOURNAL), true);
+  archived.forEach(year => {
+    if (startDate && year * 100 + 12 < Number(startDate.replace('-', ''))) return;
+    if (endDate && year * 100 + 1 > Number(endDate.replace('-', ''))) return;
+    collect(SpreadsheetApp.getActiveSpreadsheet().getSheetByName(journalArchiveSheetName_(year)), false);
+  });
+  const all = Object.keys(grouped).map(key => grouped[key]).filter(item => {
+    if (journalId && item.journalId !== journalId) return false;
+    if (startDate && item.date < startDate) return false;
+    if (endDate && item.date > endDate) return false;
+    return !search || item.searchText.indexOf(search) >= 0;
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.journalId).localeCompare(String(a.journalId)));
+  const stats = {
+    total: all.length,
+    posted: all.filter(item => item.status === 'POSTED').length,
+    draft: all.filter(item => item.status === 'DRAFT').length,
+    debit: all.reduce((sum, item) => sum + Number(item.debit || 0), 0)
+  };
+  return { all: all, stats: stats };
+}
+
+function webJournalPage_(cached, opts) {
+  const all = cached.all || [];
+  const pageSize = Math.max(1, Math.min(500, Number(opts.pageSize) || 50));
+  const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
+  const page = Math.max(1, Math.min(totalPages, Number(opts.page) || 1));
+  const journals = (opts.all ? all : all.slice((page - 1) * pageSize, page * pageSize)).map(item => ({
+    journalId: item.journalId, date: item.date, journalType: item.journalType,
+    status: item.status, description: item.description, reference: item.reference, party: item.party,
+    debit: r2_(item.debit), credit: r2_(item.credit), lineCount: item.lineCount,
+    postedAt: item.postedAt, updatedAt: item.updatedAt
+  }));
+  return { success: true, journals: journals, count: journals.length, stats: cached.stats, total: all.length, page: page, pageSize: pageSize, totalPages: totalPages };
+}
+
 function webListJournals(options) {
   try {
     const opts = options || {};
@@ -807,62 +938,22 @@ function webListJournals(options) {
     const startDate = String(opts.startDate || '');
     const endDate = String(opts.endDate || '');
     const journalId = String(opts.journalId || '').trim();
-    const pageSize = Math.max(1, Math.min(500, Number(opts.pageSize) || 50));
-    const cacheKey = webJournalListCacheKey_({ status: status, search: search, startDate: startDate, endDate: endDate, journalId: journalId, page: opts.page, pageSize: pageSize, all: opts.all });
-    const cached = webCacheGet_(cacheKey);
-    if (cached) return cached;
+    const cacheKey = webJournalListCacheKey_({ status: status, search: search, startDate: startDate, endDate: endDate, journalId: journalId });
+    const cached = webCacheGetLarge_(cacheKey);
+    if (cached) return webJournalPage_(cached, opts);
 
-    const values = readJournalRows_({ status: status, startDate: startDate, endDate: endDate });
-    const grouped = {};
-    for (let i = 0; i < values.length; i++) {
-      const row = values[i];
-      const id = String(row[COL.id] || '').trim();
-      if (!id) continue;
-      const date = dateToIso_(row[COL.date]);
-      const rowStatus = String(row[COL.status] || '').toUpperCase();
-      if (!grouped[id]) {
-        grouped[id] = {
-          journalId: id, date: date, journalType: '', status: rowStatus,
-          description: '', reference: '', party: '', debit: 0, credit: 0,
-          lineCount: 0, postedAt: '', updatedAt: '', searchText: ''
-        };
-      }
-      const entry = grouped[id];
-      entry.searchText += [id, rowStatus, row[COL.type], row[COL.description], row[COL.reference], row[COL.party]].map(v => String(v || '').toLowerCase()).join('\u0001') + '\u0002';
-      entry.lineCount += 1;
-      entry.debit += Number(row[COL.debit]) || 0;
-      entry.credit += Number(row[COL.credit]) || 0;
-      if (!entry.journalType) entry.journalType = String(row[COL.type] || '');
-      if (!entry.description && row[COL.description]) entry.description = String(row[COL.description]);
-      if (!entry.reference && row[COL.reference]) entry.reference = String(row[COL.reference]);
-      if (!entry.party && row[COL.party]) entry.party = String(row[COL.party]);
-      if (!entry.postedAt && row[COL.postedAt]) entry.postedAt = webDateTime_(row[COL.postedAt]);
-      if (!entry.updatedAt && row[COL.updatedAt]) entry.updatedAt = webDateTime_(row[COL.updatedAt]);
-    }
-
-    const all = Object.keys(grouped).map(key => grouped[key]).filter(item => {
-      if (journalId && item.journalId !== journalId) return false;
-      if (startDate && item.date < startDate) return false;
-      if (endDate && item.date > endDate) return false;
-      return !search || item.searchText.toLowerCase().includes(search);
-    }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.journalId).localeCompare(String(a.journalId)));
-    const stats = {
-      total: all.length,
-      posted: all.filter(item => item.status === 'POSTED').length,
-      draft: all.filter(item => item.status === 'DRAFT').length,
-      debit: all.reduce((n, item) => n + Number(item.debit || 0), 0)
+    const grouped = webListJournalGroups_(status, startDate, endDate, journalId, search);
+    const cacheValue = {
+      all: grouped.all.map(item => ({
+        journalId: item.journalId, date: item.date, journalType: item.journalType, status: item.status,
+        description: item.description, reference: item.reference, party: item.party,
+        debit: item.debit, credit: item.credit, lineCount: item.lineCount,
+        postedAt: item.postedAt, updatedAt: item.updatedAt
+      })),
+      stats: grouped.stats
     };
-    const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
-    const page = Math.max(1, Math.min(totalPages, Number(opts.page) || 1));
-    const journals = (opts.all ? all : all.slice((page - 1) * pageSize, page * pageSize)).map(item => ({
-      journalId: item.journalId, date: item.date, journalType: item.journalType,
-      status: item.status, description: item.description, reference: item.reference, party: item.party,
-      debit: r2_(item.debit), credit: r2_(item.credit), lineCount: item.lineCount,
-      postedAt: item.postedAt, updatedAt: item.updatedAt
-    }));
-    const result = { success: true, journals: journals, count: journals.length, stats: stats, total: all.length, page: page, pageSize: pageSize, totalPages: totalPages };
-    webCachePut_(cacheKey, result, 120);
-    return result;
+    webCachePutLarge_(cacheKey, cacheValue, 120);
+    return webJournalPage_(cacheValue, opts);
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }

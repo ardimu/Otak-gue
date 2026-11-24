@@ -98,6 +98,19 @@ function agingReports_(parties, side, asOf, meta) {
   return { summary: summary, detail: detail, totals: { open: r2_(open), unapplied: r2_(un), overdue: r2_(tot[1] + tot[2] + tot[3] + tot[4]) } };
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: dashboard KPI totals skip building the full aging report rows.
+function agingTotalsOnly_(lines, side, asOf) {
+  const parties = agingBuild_(lines, side, asOf);
+  const buckets = [0, 0, 0, 0, 0];
+  let open = 0, unapplied = 0;
+  parties.forEach(party => {
+    party.buckets.forEach((value, index) => { buckets[index] += value; });
+    open += party.open;
+    unapplied += party.unapplied;
+  });
+  return { open: r2_(open), unapplied: r2_(unapplied), overdue: r2_(buckets[1] + buckets[2] + buckets[3] + buckets[4]) };
+}
+
 function generateAging(asOf, options) {
   const web = !!(options && options.web);
   const dataOnly = !!(options && options.dataOnly);
