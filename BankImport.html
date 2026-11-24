@@ -59,6 +59,20 @@
   .dialog h3 { margin: 0 0 8px; font-size: 16px; }
   .dialog p { margin: 0; color: var(--muted); white-space: pre-wrap; }
   .dialog .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .dialog { position: relative; }
+  .party-overlay { align-items: flex-start; padding-top: 8vh; }
+  .dialog-compact { max-width: 480px; max-height: 82vh; overflow: auto; }
+  .dialog-wide { max-width: 760px; max-height: 86vh; display: flex; flex-direction: column; }
+  .dialog-x { position: absolute; top: 6px; right: 8px; border: 0; background: transparent; color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 8px; }
+  .party-stats { display: grid; gap: 6px; margin: 12px 0; padding: 10px 12px; background: var(--warn-soft); border-radius: 3px; }
+  .party-stats div { display: flex; justify-content: space-between; gap: 12px; }
+  .party-stats span { color: var(--muted); }
+  .party-caption { font-weight: 600; margin-top: 10px; }
+  .party-list { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  .party-list li { margin: 2px 0; }
+  .party-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .detail-wrap { max-height: 48vh; min-height: 120px; }
+  .detail-page { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -153,6 +167,46 @@
   </div>
 </div>
 
+<div id="partyOverlay" class="overlay party-overlay hidden">
+  <div class="dialog dialog-compact" role="dialog" aria-modal="true" aria-labelledby="partyTitle">
+    <button class="dialog-x" id="partyX" type="button" aria-label="Close">×</button>
+    <h3 id="partyTitle">Some rows are missing Customer / Supplier</h3>
+    <div id="partyBody"></div>
+    <div class="party-actions">
+      <button class="quiet hidden" id="partyDetails" type="button">View Details</button>
+      <button class="primary" id="partyContinue" type="button">Continue Without Supplier/Customer</button>
+      <button class="quiet" id="partyCancel" type="button">Cancel / Fill First</button>
+    </div>
+  </div>
+</div>
+
+<div id="partyDetailOverlay" class="overlay party-overlay hidden">
+  <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="partyDetailTitle">
+    <button class="dialog-x" id="partyDetailX" type="button" aria-label="Close">×</button>
+    <h3 id="partyDetailTitle">Missing Customer / Supplier details</h3>
+    <div class="filterbar">
+      <input type="search" id="partyDetailSearch" placeholder="Search description or amount…">
+      <select id="partyDetailFilter">
+        <option value="ALL">All</option>
+        <option value="SUPPLIER">No Supplier</option>
+        <option value="CUSTOMER">No Customer</option>
+      </select>
+      <button class="quiet" id="partyDetailClose" type="button">Close</button>
+    </div>
+    <div class="wrap detail-wrap">
+      <table style="min-width:560px">
+        <thead><tr><th>Row</th><th>Description / amount</th><th>Type</th></tr></thead>
+        <tbody id="partyDetailBody"></tbody>
+      </table>
+    </div>
+    <div class="detail-page">
+      <button class="quiet" id="partyDetailPrev" type="button">Previous</button>
+      <span class="note" id="partyDetailPage"></span>
+      <button class="quiet" id="partyDetailNext" type="button">Next</button>
+    </div>
+  </div>
+</div>
+
 <?!= include('script.js'); ?>
 <script>
 const $ = id => document.getElementById(id);
@@ -188,10 +242,75 @@ function ask(title, body, ok, fn, cancelLabel) {
 }
 $('dlgCancel').addEventListener('click', () => { $('overlay').classList.add('hidden'); pending = null; });
 $('dlgOk').addEventListener('click', () => { const f = pending; $('overlay').classList.add('hidden'); pending = null; if (f) f(); });
-function missingPartyBody(count, details) {
-  return count + ' transaction' + (count === 1 ? ' has' : 's have') + ' no Customer / Supplier assigned. You can still post them to the General Ledger, but they will not appear in the Customer / Supplier ledger. Do you want to continue?' +
-    (details && details.length ? '\n\n' + details.join('\n') : '');
+let partyContinueFn = null, partyRows = [], partyDetailPage = 1;
+function parsePartyDetail_(line) {
+  const raw = String(line || '').trim();
+  let type = 'OTHER';
+  if (/No Supplier|Tanpa Pemasok/i.test(raw)) type = 'SUPPLIER';
+  else if (/No Customer|Tanpa Pelanggan/i.test(raw)) type = 'CUSTOMER';
+  const rowMatch = /^(Row|Baris)\s+(\d+)\s*-?\s*/i.exec(raw);
+  const row = rowMatch ? rowMatch[2] : '';
+  const text = raw.replace(/^(Row|Baris)\s+\d+\s*-?\s*/i, '')
+    .replace(/\s*-\s*(No Supplier|No Customer|Tanpa Pemasok|Tanpa Pelanggan)\s*$/i, '')
+    .replace(/\s+Rp\s*/, ' - Rp ').trim();
+  return { row: row, text: text, type: type, search: raw.toLowerCase() };
 }
+function partyTypeLabel_(type) {
+  return type === 'SUPPLIER' ? 'No Supplier' : type === 'CUSTOMER' ? 'No Customer' : 'Other';
+}
+function showMissingPartyWarning(details, continueFn) {
+  partyRows = (details || []).map(parsePartyDetail_);
+  partyContinueFn = continueFn || null;
+  const suppliers = partyRows.filter(r => r.type === 'SUPPLIER').length;
+  const customers = partyRows.filter(r => r.type === 'CUSTOMER').length;
+  const examples = partyRows.slice(0, 5).map(r => '<li>' + esc(r.text) + ' - ' + esc(partyTypeLabel_(r.type)) + '</li>').join('') || '<li>-</li>';
+  $('partyBody').innerHTML = '<div class="party-stats">' +
+    '<div><span>Total rows with issues:</span><b>' + partyRows.length + '</b></div>' +
+    '<div><span>Breakdown:</span><b>' + suppliers + ' rows No Supplier, ' + customers + ' rows No Customer</b></div>' +
+    '</div><div class="party-caption">Example 5 rows:</div><ul class="party-list">' + examples + '</ul>';
+  $('partyDetails').classList.toggle('hidden', partyRows.length <= 5);
+  $('partyOverlay').classList.remove('hidden');
+}
+function closePartyWarning() {
+  $('partyOverlay').classList.add('hidden');
+  partyContinueFn = null;
+}
+function closePartyDetails() {
+  $('partyDetailOverlay').classList.add('hidden');
+}
+function openPartyDetails() {
+  partyDetailPage = 1;
+  $('partyDetailSearch').value = '';
+  $('partyDetailFilter').value = 'ALL';
+  $('partyDetailOverlay').classList.remove('hidden');
+  renderPartyDetails();
+}
+function renderPartyDetails() {
+  const q = $('partyDetailSearch').value.trim().toLowerCase();
+  const filter = $('partyDetailFilter').value;
+  const filtered = partyRows.filter(r => (filter === 'ALL' || r.type === filter) && (!q || r.search.indexOf(q) >= 0));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / 50));
+  partyDetailPage = Math.min(partyDetailPage, totalPages);
+  const rows = filtered.slice((partyDetailPage - 1) * 50, partyDetailPage * 50);
+  $('partyDetailBody').innerHTML = rows.length
+    ? rows.map(r => '<tr><td>' + esc(r.row) + '</td><td>' + esc(r.text) + '</td><td>' + esc(partyTypeLabel_(r.type)) + '</td></tr>').join('')
+    : '<tr><td colspan="3" class="note">No matching rows.</td></tr>';
+  $('partyDetailPage').textContent = partyDetailPage + ' / ' + totalPages;
+  $('partyDetailPrev').disabled = partyDetailPage <= 1;
+  $('partyDetailNext').disabled = partyDetailPage >= totalPages;
+}
+$('partyX').addEventListener('click', closePartyWarning);
+$('partyCancel').addEventListener('click', closePartyWarning);
+$('partyContinue').addEventListener('click', () => { const fn = partyContinueFn; closePartyWarning(); if (fn) fn(); });
+$('partyOverlay').addEventListener('click', ev => { if (ev.target === $('partyOverlay')) closePartyWarning(); });
+$('partyDetails').addEventListener('click', openPartyDetails);
+$('partyDetailX').addEventListener('click', closePartyDetails);
+$('partyDetailClose').addEventListener('click', closePartyDetails);
+$('partyDetailOverlay').addEventListener('click', ev => { if (ev.target === $('partyDetailOverlay')) closePartyDetails(); });
+$('partyDetailSearch').addEventListener('input', () => { partyDetailPage = 1; renderPartyDetails(); });
+$('partyDetailFilter').addEventListener('change', () => { partyDetailPage = 1; renderPartyDetails(); });
+$('partyDetailPrev').addEventListener('click', () => { if (partyDetailPage > 1) { partyDetailPage--; renderPartyDetails(); } });
+$('partyDetailNext').addEventListener('click', () => { partyDetailPage++; renderPartyDetails(); });
 
 function loadSetup() {
   google.script.run
@@ -235,7 +354,7 @@ $('batches').addEventListener('click', ev => {
 function postBatchWithWarning(id) {
   const b = (setup && setup.batches || []).find(x => x.batchId === id) || {};
   const go = () => runBatch('postImportBatch', id, 'Posting...');
-  if (b.missingParty) ask('Missing Customer / Supplier', missingPartyBody(b.missingParty, b.missingRows), 'Post Anyway', go, 'Review Again');
+  if (b.missingParty) showMissingPartyWarning(b.missingRows || [], go);
   else go();
 }
 function runBatch(fn, id, label) {
@@ -428,7 +547,7 @@ $('btnImport').addEventListener('click', () => {
       const missing = rows.filter(r => !String(r.party || '').trim());
       if (missing.length) {
         const details = missing.map(r => 'Row ' + r.n + ' - ' + r.desc + ' Rp ' + fmt(r.in > 0 ? r.in : r.out) + ' - ' + (r.in > 0 ? 'No Customer' : 'No Supplier'));
-        ask('Missing Customer / Supplier', missingPartyBody(missing.length, details), 'Post Anyway', go, 'Review Again');
+        showMissingPartyWarning(details, go);
       } else go();
     } else go();
   } catch (e) { say(e.message, 'error'); }
