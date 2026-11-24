@@ -10,12 +10,13 @@ const WEB_PAGES = {
   home: { en: 'Dashboard', id: 'Beranda', file: 'WebHome', idFile: 'WebHome' },
   'journal-new': {
     en: 'New Journal Entry', id: 'Jurnal Baru', file: 'JournalForm', idFile: 'JournalFormId',
-    vars: function (params) { return { draftId: String((params && params.draftId) || ''), appMode: getCompanyMode_() }; }
+    vars: function (params) { return { draftId: String((params && params.draftId) || ''), appMode: webRequestContext_().mode }; }
   },
   journals: { en: 'Journal List', id: 'Daftar Jurnal', file: 'JournalList', idFile: 'JournalList', dashboard: true },
   'bank-import': { en: 'Bank & Petty Cash', id: 'Bank & Kas Kecil', file: 'BankImport', idFile: 'BankImportId', dashboard: true },
   drafts: { en: 'Draft Management', id: 'Kelola Draf', file: 'DraftManagement', idFile: 'DraftManagementId', dashboard: true },
   parties: { en: 'Parties', id: 'Pihak', file: 'PartiesManager', idFile: 'PartiesManagerId', dashboard: true },
+  'export-excel': { en: 'Export to Excel', id: 'Ekspor ke Excel', file: 'WebAction', idFile: 'WebAction', action: 'export-hub', dashboard: true },
   'period-end': { en: 'Period-End Tools', id: 'Alat Akhir Periode', file: 'PeriodEnd', idFile: 'PeriodEndId', dashboard: true },
   'inventory-movements': { en: 'Process Stock Movements', id: 'Proses Mutasi Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-movements', dashboard: true },
   'inventory-summary': { en: 'Stock Summary', id: 'Ringkasan Persediaan', file: 'WebAction', idFile: 'WebAction', action: 'stock-summary', dashboard: true },
@@ -32,7 +33,6 @@ const WEB_PAGES = {
     vars: function () { return { reportKeys: 'gl' }; }
   },
   'reports-aging': { en: 'AR & AP Aging', id: 'Umur Piutang & Utang', file: 'WebAction', idFile: 'WebAction', action: 'aging', dashboard: true },
-  'export-excel': { en: 'Export to Excel', id: 'Ekspor ke Excel', file: 'WebAction', idFile: 'WebAction', action: 'export-excel', dashboard: true },
   'settings-profile': { en: 'Company Profile', id: 'Profil Perusahaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'profile', dashboard: true },
   'settings-accounting': { en: 'Accounting Settings', id: 'Pengaturan Akuntansi', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounting', dashboard: true },
   'settings-accounts': { en: 'Default Accounts', id: 'Akun Bawaan', file: 'CompanySettings', idFile: 'CompanySettingsId', tab: 'accounts', dashboard: true },
@@ -69,8 +69,7 @@ const WEB_NAV = [
       },
       {
         en: 'Other Support', id: 'Dukungan Lain', items: [
-          ['parties', 'Parties', 'Pihak', 'PY'],
-          ['export-excel', 'Export to Excel', 'Ekspor ke Excel', 'EX']
+          ['parties', 'Parties', 'Pihak', 'PY']
         ]
       }
     ]
@@ -115,6 +114,7 @@ function doGet(e) {
 }
 
 function webRenderPage_(def, page, params, lang, raw) {
+  const ctx = webRequestContext_();
   const file = lang === 'ID' && def.idFile ? def.idFile : def.file;
   const template = HtmlService.createTemplateFromFile(file);
   const vars = def.vars ? def.vars(params) : {};
@@ -129,8 +129,8 @@ function webRenderPage_(def, page, params, lang, raw) {
   template.reportKeys = String(params.keys || template.reportKeys || (vars.reportKeys || ''));
   template.webMode = true;
   template.baseUrl = baseUrl;
-  template.company = String(readSettings_()['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
-  template.mode = getCompanyMode_();
+  template.company = String(ctx.settings['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
+  template.mode = ctx.mode;
   let content = template.evaluate().getContent();
 
   if (raw) {
@@ -145,8 +145,8 @@ function webRenderPage_(def, page, params, lang, raw) {
   shell.page = page;
   shell.lang = lang;
   shell.baseUrl = baseUrl;
-  shell.company = String(readSettings_()['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
-  shell.mode = getCompanyMode_();
+  shell.company = String(ctx.settings['Company Name'] || (lang === 'ID' ? 'Perusahaan' : 'Company'));
+  shell.mode = ctx.mode;
   const framePage = def.dashboard ? page : 'home';
   shell.frameSrc = baseUrl + '?page=' + encodeURIComponent(framePage) + '&raw=1';
   return shell.evaluate().setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -270,139 +270,334 @@ function webDeniedHtml_() {
     '<h2>Access denied</h2><p>Your Google account is not in <code>WEB_ALLOWED_EMAILS</code>.</p></body></html>';
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: dashboard reads period KPI rows and six cached recent journals instead of scanning 37 Journal columns.
 function webGetDashboard() {
   try {
-    const cached = webCacheGet_(WEB_CACHE_DASH);
-    if (cached) return cached;
-
-    const settings = readSettings_();
+    const ctx = webRequestContext_();
     const selected = getReportSelection_();
     const tz = Session.getScriptTimeZone() || 'Asia/Jakarta';
     const fallback = Utilities.formatDate(new Date(), tz, 'yyyy-MM');
     const periodText = /^\d{4}-\d{2}$/.test(String(selected.period || '')) ? String(selected.period) : fallback;
     const period = Number(periodText.replace('-', ''));
     const year = Math.floor(period / 100), month = period % 100;
-    const fiscalStart = Number(settings['Fiscal Year Start Month']) || 1;
+    const fiscalStart = ctx.fiscalStart;
     const fiscalFrom = (month >= fiscalStart ? year : year - 1) * 100 + fiscalStart;
-    const asOf = new Date(year, month, 0, 12, 0, 0);
 
-    const coa = readCoa_();
-    const coaMap = new Map(coa.map(a => [String(a.code).trim(), a]));
-    const cashCodes = new Set(coa.filter(a => a.group === 'Cash & Cash Equivalents').map(a => String(a.code).trim()));
-    const section = new Map(coa.map(a => [String(a.code).trim(), sectionOf_(a)]));
-    const inflowSections = ['REV', 'CONTRA', 'OI'];
-    const outflowSections = ['COS', 'OPEX', 'OX', 'TAX'];
-    const arCode = mappingCode_(settings, 'ar');
-    const apCode = mappingCode_(settings, 'ap');
+    const cacheKey = webDashboardCacheKey_(periodText);
+    const cached = webCacheGet_(cacheKey);
+    if (cached) return cached;
 
-    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
-    const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
-    let cash = 0, income = 0, expense = 0, incomeYtd = 0, expenseYtd = 0, drafts = 0;
-    let tbEnd = 0, bsAssets = 0, bsLiab = 0, bsEq = 0;
-    const recentMap = new Map();
-    const arLines = [], apLines = [];
-
-    for (let i = 0; i < values.length; i++) {
-      const r = values[i];
-      const status = String(r[COL.status] || '');
-      const code = String(r[COL.accountCode] || '').trim();
-      const debit = Number(r[COL.debit]) || 0;
-      const credit = Number(r[COL.credit]) || 0;
-      const id = String(r[COL.id] || '').trim();
-      const type = String(r[COL.type] || '');
-      const date = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
-      const rowPeriod = Number(r[COL.period]) || (date.getFullYear() * 100 + date.getMonth() + 1);
-
-      if (status === STATUS.DRAFT) {
-        if (id && !recentMap.has('D:' + id)) { drafts++; recentMap.set('D:' + id, true); }
-        continue;
-      }
-      if (status !== STATUS.POSTED) continue;
-
-      if (cashCodes.has(code) && rowPeriod <= period) cash += debit - credit;
-
-      const sec = section.get(code);
-      if (rowPeriod >= fiscalFrom && rowPeriod <= period && NO_FLOW.indexOf(type) < 0) {
-        if (inflowSections.indexOf(sec) >= 0) { const v = -1 * (debit - credit); incomeYtd += v; if (rowPeriod === period) income += v; }
-        else if (outflowSections.indexOf(sec) >= 0) { const v = (debit - credit); expenseYtd += v; if (rowPeriod === period) expense += v; }
-      }
-
-      if (rowPeriod <= period) {
-        tbEnd += debit - credit;
-        if (sec === 'CA' || sec === 'NCA') bsAssets += debit - credit;
-        else if (sec === 'CL' || sec === 'NCL') bsLiab += credit - debit;
-        else if (sec === 'EQ') bsEq += credit - debit;
-        else if (sec) bsEq += credit - debit; // P&L in equity until closed
-      }
-
-      if (id) {
-        const item = recentMap.get(id);
-        if (!item || item === true) {
-          recentMap.set(id, { journalId: id, date: date, journalType: type, description: String(r[COL.description] || ''), reference: String(r[COL.reference] || ''), party: String(r[COL.party] || ''), debit: 0, credit: 0, lines: 0 });
-        }
-        const rec = recentMap.get(id);
-        if (rec && rec !== true) { rec.debit += debit; rec.credit += credit; rec.lines += 1; }
-      }
-
-      if (date <= asOf && (code === arCode || code === apCode)) {
-        const line = { date: date, id: id, ref: String(r[COL.reference] || ''), desc: String(r[COL.lineDescription] || r[COL.description] || ''), party: String(r[COL.party] || ''), partyId: String(r[COL.partyId] || ''), due: r[COL.dueDate] instanceof Date ? r[COL.dueDate] : null, debit: debit, credit: credit };
-        if (code === arCode) arLines.push(line);
-        if (code === apCode) apLines.push(line);
-      }
-    }
-
-    // Count drafts accurately (unique IDs)
-    const draftIds = new Set();
-    for (let i = 0; i < values.length; i++) {
-      const r = values[i];
-      if (String(r[COL.status] || '') === STATUS.DRAFT) draftIds.add(String(r[COL.id] || '').trim());
-    }
-    drafts = draftIds.size;
-
-    const company = String(settings['Company Name'] || '');
-    const currency = String(settings['Currency'] || 'IDR').trim() || 'IDR';
-    const net = r2_(income - expense);
-    const arTotals = agingReports_(agingBuild_(arLines, 'AR', asOf), 'AR', asOf, { company: company }).totals;
-    const apTotals = agingReports_(agingBuild_(apLines, 'AP', asOf), 'AP', asOf, { company: company }).totals;
-
-    const recent = Array.from(recentMap.values())
-      .filter(v => v && v !== true)
-      .sort((a, b) => (b.date - a.date) || String(b.journalId).localeCompare(String(a.journalId)))
-      .slice(0, 6)
-      .map(item => ({
-        journalId: item.journalId, date: dateToIso_(item.date), journalType: item.journalType,
-        description: item.description, reference: item.reference, party: item.party,
-        debit: r2_(item.debit), credit: r2_(item.credit), lines: item.lines
-      }));
-
-    const tbDiff = Math.abs(r2_(tbEnd));
-    const bsDiff = Math.abs(r2_(bsAssets - (bsLiab + bsEq)));
-    const checks = [];
-    if (tbDiff > TOLERANCE || bsDiff > TOLERANCE) checks.push({ level: 'danger', text: tr_('Ledger or balance sheet is out of balance. Run Check COA & Settings.', 'Buku besar atau neraca tidak seimbang. Jalankan Periksa COA & Pengaturan.') });
-    if (drafts) checks.push({ level: 'warn', text: tr_(drafts + ' journal draft(s) are waiting to be posted.', drafts + ' draf jurnal menunggu untuk diposting.') });
-    if (arTotals.overdue > 0) checks.push({ level: 'warn', text: tr_('Some receivables are past their due date.', 'Ada piutang yang telah melewati jatuh tempo.') });
-    if (!checks.length) checks.push({ level: 'ok', text: tr_('Ledger balances and no urgent action is needed.', 'Buku seimbang dan tidak ada tindakan mendesak.') });
-
-    const result = {
-      success: true, company: company, mode: getCompanyMode_(), currency: currency,
-      profile: { legalName: String(settings['Legal Name'] || ''), npwp: String(settings['NPWP'] || ''), nib: String(settings['NIB'] || ''), address: String(settings['Address'] || ''), phone: String(settings['Phone'] || ''), email: String(settings['Email'] || ''), businessType: String(settings['Business Type'] || ''), goLiveDate: String(settings['Go Live Date'] || ''), fiscalStart: fiscalStart },
-      period: periodText, fiscalFrom: String(fiscalFrom).slice(0, 4) + '-' + String(fiscalFrom).slice(4),
-      hasData: values.length > 0, cash: r2_(cash), income: r2_(income), expense: r2_(expense), net: net,
-      incomeYtd: r2_(incomeYtd), expenseYtd: r2_(expenseYtd),
-      ar: arTotals.open, arOverdue: arTotals.overdue, ap: apTotals.open, apOverdue: apTotals.overdue,
-      assets: r2_(bsAssets), liabilities: r2_(bsLiab), equity: r2_(bsEq), drafts: drafts, recent: recent, checks: checks,
-      updatedAt: new Date().toISOString()
-    };
-    webCachePut_(WEB_CACHE_DASH, result, 120);
+    const summary = webGetDashboardSummary_(ctx);
+    const result = webDashboardFromSummary_(ctx, summary, periodText, period, fiscalFrom);
+    webCachePut_(cacheKey, result, 120);
     return result;
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }
 }
 
-const WEB_CACHE_DASH = 'web:dashboard';
-const WEB_CACHE_JOURNALS = 'web:journals:';
+function webDashboardFromSummary_(ctx, summary, periodText, period, fiscalFrom) {
+  const settings = ctx.settings;
+  const fiscalStart = ctx.fiscalStart;
+  const company = String(settings['Company Name'] || '');
+  const currency = String(settings['Currency'] || 'IDR').trim() || 'IDR';
+  const periodKey = String(periodText.replace('-', ''));
+  let cash = 0, income = 0, expense = 0, incomeYtd = 0, expenseYtd = 0, drafts = 0;
+  let tbEnd = 0, bsAssets = 0, bsLiab = 0, bsEq = 0, hasData = false, updatedAt = '';
+  const recentById = new Map();
 
+  summary.forEach(row => {
+    const p = Number(row.period);
+    if (row.hasData) hasData = true;
+    drafts += Number(row.draftCount) || 0;
+    if (p <= period) {
+      cash += Number(row.cash) || 0;
+      tbEnd += Number(row.tb) || 0;
+      bsAssets += Number(row.assets) || 0;
+      bsLiab += Number(row.liabilities) || 0;
+      bsEq += Number(row.equity) || 0;
+    }
+    if (p >= fiscalFrom && p <= period) {
+      incomeYtd += Number(row.income) || 0;
+      expenseYtd += Number(row.expense) || 0;
+    }
+    if (p === period) {
+      income += Number(row.income) || 0;
+      expense += Number(row.expense) || 0;
+    }
+    if (row.updatedAt) updatedAt = row.updatedAt;
+    (row.recent || []).forEach(item => {
+      if (item && item.journalId && !recentById.has(item.journalId)) recentById.set(item.journalId, item);
+    });
+  });
+
+  const current = summary.get(periodKey) || {};
+  const ar = Number(current.ar) || 0, arOverdue = Number(current.arOverdue) || 0;
+  const ap = Number(current.ap) || 0, apOverdue = Number(current.apOverdue) || 0;
+  const net = r2_(income - expense);
+  const recent = Array.from(recentById.values())
+    .map(item => ({ item: item, dateValue: new Date(item.date) }))
+    .sort((a, b) => (b.dateValue - a.dateValue) || String(b.item.journalId).localeCompare(String(a.item.journalId)))
+    .slice(0, 6)
+    .map(entry => ({
+      journalId: entry.item.journalId, date: dateToIso_(entry.dateValue), journalType: entry.item.journalType,
+      description: entry.item.description, reference: entry.item.reference, party: entry.item.party,
+      debit: r2_(Number(entry.item.debit) || 0), credit: r2_(Number(entry.item.credit) || 0), lines: Number(entry.item.lines) || 0
+    }));
+
+  const tbDiff = Math.abs(r2_(tbEnd));
+  const bsDiff = Math.abs(r2_(bsAssets - (bsLiab + bsEq)));
+  const checks = [];
+  if (tbDiff > TOLERANCE || bsDiff > TOLERANCE) checks.push({ level: 'danger', text: tr_('Ledger or balance sheet is out of balance. Run Check COA & Settings.', 'Buku besar atau neraca tidak seimbang. Jalankan Periksa COA & Pengaturan.') });
+  if (drafts) checks.push({ level: 'warn', text: tr_(drafts + ' journal draft(s) are waiting to be posted.', drafts + ' draf jurnal menunggu untuk diposting.') });
+  if (arOverdue > 0) checks.push({ level: 'warn', text: tr_('Some receivables are past their due date.', 'Ada piutang yang telah melewati jatuh tempo.') });
+  if (!checks.length) checks.push({ level: 'ok', text: tr_('Ledger balances and no urgent action is needed.', 'Buku seimbang dan tidak ada tindakan mendesak.') });
+
+  return {
+    success: true, company: company, mode: ctx.mode, currency: currency,
+    profile: { legalName: String(settings['Legal Name'] || ''), npwp: String(settings['NPWP'] || ''), nib: String(settings['NIB'] || ''), address: String(settings['Address'] || ''), phone: String(settings['Phone'] || ''), email: String(settings['Email'] || ''), businessType: String(settings['Business Type'] || ''), goLiveDate: String(settings['Go Live Date'] || ''), fiscalStart: fiscalStart },
+    period: periodText, fiscalFrom: String(fiscalFrom).slice(0, 4) + '-' + String(fiscalFrom).slice(4),
+    hasData: hasData, cash: r2_(cash), income: r2_(income), expense: r2_(expense), net: net,
+    incomeYtd: r2_(incomeYtd), expenseYtd: r2_(expenseYtd),
+    ar: ar, arOverdue: arOverdue, ap: ap, apOverdue: apOverdue,
+    assets: r2_(bsAssets), liabilities: r2_(bsLiab), equity: r2_(bsEq), drafts: drafts, recent: recent, checks: checks,
+    updatedAt: updatedAt || new Date().toISOString()
+  };
+}
+
+function webGetDashboardSummary_(ctx) {
+  const rev = webDataRevision_('journals');
+  const props = PropertiesService.getDocumentProperties();
+  const builtRev = String(props.getProperty('WEB_DASH_SUMMARY_REV') || '');
+  let summary = builtRev === rev ? webReadDashboardSummary_() : null;
+  if (!summary) {
+    webBuildDashboardSummary_(ctx);
+    props.setProperty('WEB_DASH_SUMMARY_REV', rev);
+    summary = webReadDashboardSummary_() || new Map();
+  }
+  return summary;
+}
+
+function webReadDashboardSummary_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(WEB_DASH_SUMMARY_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return new Map();
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, WEB_DASH_SUMMARY_HEADERS.length).getValues();
+  const out = new Map();
+  values.forEach(r => {
+    const period = String(r[0] || '').trim();
+    if (!/^\d{6}$/.test(period)) return;
+    let recent = [];
+    try { recent = JSON.parse(String(r[15] || '[]')); } catch (e) { recent = []; }
+    out.set(period, {
+      period: period,
+      hasData: String(r[1]) === '1' || String(r[1]) === 'true',
+      draftCount: Number(r[3]) || 0,
+      cash: Number(r[4]) || 0, income: Number(r[5]) || 0, expense: Number(r[6]) || 0, tb: Number(r[7]) || 0,
+      assets: Number(r[8]) || 0, liabilities: Number(r[9]) || 0, equity: Number(r[10]) || 0,
+      ar: Number(r[11]) || 0, arOverdue: Number(r[12]) || 0, ap: Number(r[13]) || 0, apOverdue: Number(r[14]) || 0,
+      recent: recent, updatedAt: String(r[16] || '')
+    });
+  });
+  return out;
+}
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: one Journal read creates per-YYYYMM KPI rows; normal dashboard loads never touch the Journal sheet.
+function webBuildDashboardSummary_(ctx) {
+  const sheet = webEnsureDashboardSummarySheet_();
+  const values = readJournalRows_();
+  const buckets = new Map();
+  const reportRows = new Map();
+  const allAr = [], allAp = [];
+
+  const bucketFor = period => {
+    const key = String(period);
+    if (!buckets.has(key)) {
+      buckets.set(key, { period: key, hasData: false, postedLines: 0, draftIds: new Set(), cash: 0, income: 0, expense: 0, tb: 0, assets: 0, liabilities: 0, equity: 0, recent: new Map(), arLines: [], apLines: [] });
+    }
+    return buckets.get(key);
+  };
+
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    const status = String(r[COL.status] || '');
+    const code = String(r[COL.accountCode] || '').trim();
+    const debit = Number(r[COL.debit]) || 0;
+    const credit = Number(r[COL.credit]) || 0;
+    const id = String(r[COL.id] || '').trim();
+    const type = String(r[COL.type] || '');
+    const date = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
+    const rowPeriod = Number(r[COL.period]) || (date.getFullYear() * 100 + date.getMonth() + 1);
+    const b = bucketFor(rowPeriod);
+    b.hasData = true;
+    if (status === STATUS.DRAFT) {
+      if (id) b.draftIds.add(id);
+      continue;
+    }
+    if (status !== STATUS.POSTED) continue;
+
+    const reportKey = rowPeriod + '|' + type + '|' + code;
+    let reportRow = reportRows.get(reportKey);
+    if (!reportRow) {
+      reportRow = { period: rowPeriod, type: type, code: code, debit: 0, credit: 0 };
+      reportRows.set(reportKey, reportRow);
+    }
+    reportRow.debit += debit;
+    reportRow.credit += credit;
+
+    b.postedLines++;
+    if (ctx.cashCodes.has(code)) b.cash += debit - credit;
+    const sec = ctx.section.get(code);
+    if (NO_FLOW.indexOf(type) < 0) {
+      if (['REV', 'CONTRA', 'OI'].indexOf(sec) >= 0) b.income += -1 * (debit - credit);
+      else if (['COS', 'OPEX', 'OX', 'TAX'].indexOf(sec) >= 0) b.expense += debit - credit;
+    }
+    b.tb += debit - credit;
+    if (sec === 'CA' || sec === 'NCA') b.assets += debit - credit;
+    else if (sec === 'CL' || sec === 'NCL') b.liabilities += credit - debit;
+    else if (sec === 'EQ') b.equity += credit - debit;
+    else if (sec) b.equity += credit - debit;
+
+    if (id) {
+      const rec = b.recent.get(id) || { journalId: id, date: date, journalType: type, description: String(r[COL.description] || ''), reference: String(r[COL.reference] || ''), party: String(r[COL.party] || ''), debit: 0, credit: 0, lines: 0 };
+      rec.debit += debit;
+      rec.credit += credit;
+      rec.lines += 1;
+      b.recent.set(id, rec);
+    }
+
+    const line = { date: date, id: id, ref: String(r[COL.reference] || ''), desc: String(r[COL.lineDescription] || r[COL.description] || ''), party: String(r[COL.party] || ''), partyId: String(r[COL.partyId] || ''), due: r[COL.dueDate] instanceof Date ? r[COL.dueDate] : null, debit: debit, credit: credit };
+    if (code === ctx.arCode) { b.arLines.push(line); allAr.push(line); }
+    if (code === ctx.apCode) { b.apLines.push(line); allAp.push(line); }
+  }
+
+  allAr.sort((a, b) => (a.date - b.date) || String(a.id).localeCompare(String(b.id)));
+  allAp.sort((a, b) => (a.date - b.date) || String(a.id).localeCompare(String(b.id)));
+  const periods = Array.from(buckets.keys()).sort();
+  let ai = 0, pi = 0;
+  const activeAr = [], activeAp = [];
+  const company = String(ctx.settings['Company Name'] || '');
+  const rows = periods.map(period => {
+    const b = buckets.get(period);
+    const asOf = webPeriodAsOf_(period);
+    while (ai < allAr.length && allAr[ai].date <= asOf) activeAr.push(allAr[ai++]);
+    while (pi < allAp.length && allAp[pi].date <= asOf) activeAp.push(allAp[pi++]);
+    const arTotals = agingReports_(agingBuild_(activeAr, 'AR', asOf), 'AR', asOf, { company: company }).totals;
+    const apTotals = agingReports_(agingBuild_(activeAp, 'AP', asOf), 'AP', asOf, { company: company }).totals;
+    const recent = Array.from(b.recent.values())
+      .sort((a, b2) => (b2.date - a.date) || String(b2.journalId).localeCompare(String(a.journalId)))
+      .slice(0, 6)
+      .map(item => ({ journalId: item.journalId, date: dateToIso_(item.date), journalType: item.journalType, description: item.description, reference: item.reference, party: item.party, debit: r2_(item.debit), credit: r2_(item.credit), lines: item.lines }));
+    return [
+      period, b.hasData ? 1 : 0, b.postedLines, b.draftIds.size,
+      r2_(b.cash), r2_(b.income), r2_(b.expense), r2_(b.tb),
+      r2_(b.assets), r2_(b.liabilities), r2_(b.equity),
+      arTotals.open, arTotals.overdue, apTotals.open, apTotals.overdue,
+      JSON.stringify(recent), new Date().toISOString()
+    ];
+  });
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, WEB_DASH_SUMMARY_HEADERS.length).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, WEB_DASH_SUMMARY_HEADERS.length).setValues(rows);
+  webWriteReportSummary_(reportRows);
+  return rows;
+}
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: per-period/account/type totals let reports reuse prior periods without re-reading every journal line.
+function webEnsureReportSummarySheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(REPORT_SUMMARY_SHEET);
+  if (!sheet) sheet = ss.insertSheet(REPORT_SUMMARY_SHEET);
+  const head = sheet.getRange(1, 1, 1, REPORT_SUMMARY_HEADERS.length).getDisplayValues()[0];
+  if (head[0] !== REPORT_SUMMARY_HEADERS[0]) sheet.getRange(1, 1, 1, REPORT_SUMMARY_HEADERS.length).setValues([REPORT_SUMMARY_HEADERS]);
+  return sheet;
+}
+
+function webWriteReportSummary_(rows) {
+  const sheet = webEnsureReportSummarySheet_();
+  const values = Array.from(rows.values())
+    .sort((a, b) => a.period - b.period || String(a.type).localeCompare(String(b.type)) || String(a.code).localeCompare(String(b.code), undefined, { numeric: true }))
+    .map(row => [row.period, row.type, row.code, row.debit, row.credit, new Date().toISOString()]);
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, REPORT_SUMMARY_HEADERS.length).clearContent();
+  if (values.length) sheet.getRange(2, 1, values.length, REPORT_SUMMARY_HEADERS.length).setValues(values);
+  PropertiesService.getDocumentProperties().setProperty('WEB_REPORT_SUMMARY_REV', webDataRevision_('journals'));
+}
+
+function webGetReportSummary_() {
+  const rev = webDataRevision_('journals');
+  const props = PropertiesService.getDocumentProperties();
+  if (String(props.getProperty('WEB_REPORT_SUMMARY_REV') || '') !== rev) {
+    webBuildDashboardSummary_(webRequestContext_());
+    props.setProperty('WEB_REPORT_SUMMARY_REV', rev);
+  }
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(REPORT_SUMMARY_SHEET);
+  const out = new Map();
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, REPORT_SUMMARY_HEADERS.length).getValues();
+  values.forEach(r => {
+    const period = Number(r[0]) || 0;
+    if (!period) return;
+    out.set(period + '|' + String(r[1]) + '|' + String(r[2]), {
+      period: period, type: String(r[1]), code: String(r[2]),
+      debit: Number(r[3]) || 0, credit: Number(r[4]) || 0
+    });
+  });
+  return out;
+}
+
+function webEnsureDashboardSummarySheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(WEB_DASH_SUMMARY_SHEET);
+  if (!sheet) {
+    sheet = ss.insertSheet(WEB_DASH_SUMMARY_SHEET);
+    sheet.getRange(1, 1, 1, WEB_DASH_SUMMARY_HEADERS.length).setValues([WEB_DASH_SUMMARY_HEADERS]);
+  }
+  const head = sheet.getRange(1, 1, 1, WEB_DASH_SUMMARY_HEADERS.length).getDisplayValues()[0];
+  if (!head.length || head[0] !== WEB_DASH_SUMMARY_HEADERS[0]) {
+    sheet.getRange(1, 1, 1, WEB_DASH_SUMMARY_HEADERS.length).setValues([WEB_DASH_SUMMARY_HEADERS]);
+  }
+  return sheet;
+}
+
+function webPeriodAsOf_(period) {
+  const p = Number(period);
+  return new Date(Math.floor(p / 100), p % 100, 0, 12, 0, 0);
+}
+
+const WEB_DASH_SUMMARY_SHEET = 'Dashboard Summary';
+const WEB_DASH_SUMMARY_HEADERS = ['Period', 'HasData', 'PostedLines', 'DraftCount', 'Cash', 'Income', 'Expense', 'TB', 'Assets', 'Liabilities', 'Equity', 'AROpen', 'AROverdue', 'APOpen', 'APOverdue', 'RecentJson', 'UpdatedAt'];
+const WEB_REV_PROP_PREFIX = 'WEB_REV_';
+let WEB_REQUEST_CONTEXT = null;
+let WEB_REV_CACHE = {};
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: scoped revisions replace global cache flushing, so unrelated screens keep their cached data.
+function webDataRevision_(scope) {
+  const key = WEB_REV_PROP_PREFIX + String(scope || 'data');
+  if (Object.prototype.hasOwnProperty.call(WEB_REV_CACHE, key)) return WEB_REV_CACHE[key];
+  const props = PropertiesService.getDocumentProperties();
+  let value = String(props.getProperty(key) || '');
+  if (!value) {
+    value = '1';
+    props.setProperty(key, value);
+  }
+  WEB_REV_CACHE[key] = value;
+  return value;
+}
+function webBumpDataRevision_(scope) {
+  const key = WEB_REV_PROP_PREFIX + String(scope || 'data');
+  const props = PropertiesService.getDocumentProperties();
+  const next = String((Number(webDataRevision_(scope)) || 1) + 1);
+  props.setProperty(key, next);
+  WEB_REV_CACHE[key] = next;
+  return next;
+}
+function webCacheKey_(name, parts) {
+  const nameText = String(name || '');
+  const scope = nameText.indexOf('dashboard') === 0 ? 'dashboard' : (nameText.indexOf('journals') === 0 ? 'journals' : 'config');
+  const tail = (parts || []).map(p => encodeURIComponent(String(p))).join(':');
+  return 'web:v1:' + webDataRevision_(scope) + ':' + nameText + (tail ? ':' + tail : '');
+}
 function webCacheGet_(key) {
   try {
     const raw = CacheService.getScriptCache().get(key);
@@ -415,19 +610,74 @@ function webCachePut_(key, value, seconds) {
     if (raw.length < 95000) CacheService.getScriptCache().put(key, raw, seconds || 120);
   } catch (e) {}
 }
-function webInvalidateCache_() {
+function webCacheJournalsKey_(status, limit) {
+  return webCacheKey_('journals:' + String(status || 'ALL') + ':' + Number(limit || 0), [getLanguage()]);
+}
+function webJournalListCacheKey_(opts) {
+  const o = opts || {};
+  return webCacheKey_('journals:list', [getLanguage(), String(o.status || 'ALL'), String(o.search || ''), String(o.startDate || ''), String(o.endDate || ''), String(o.journalId || ''), Number(o.page) || 1, Number(o.pageSize) || 50, o.all ? 1 : 0]);
+}
+function webDashboardCacheKey_(period) {
+  return webCacheKey_('dashboard', [getLanguage(), String(period || '')]);
+}
+function webConfigCacheKey_() {
+  return webCacheKey_('config', [getLanguage()]);
+}
+// OPTIMIZED FOR >100K ROWS / SCALABLE: invalidate only scopes touched by the mutation, never every cached screen.
+function webInvalidateCache_(scope) {
+  const s = String(scope || 'journals');
+  const scopes = [];
+  if (s === 'journals' || s === 'bank' || s === 'inventory') scopes.push('journals', 'dashboard');
+  else if (s === 'config' || s === 'settings' || s === 'language') scopes.push('config', 'dashboard');
+  else if (s === 'dashboard') scopes.push('dashboard');
+  else scopes.push(s);
+  scopes.forEach(item => webBumpDataRevision_(item));
+  if (scopes.indexOf('config') >= 0) WEB_REQUEST_CONTEXT = null;
   try {
     const cache = CacheService.getScriptCache();
-    const keys = [WEB_CACHE_DASH];
-    for (let i = 0; i < 5; i++) keys.push(WEB_CACHE_JOURNALS + 'ALL:' + [50,100,200,500][i % 4]);
-    ['ALL','POSTED','DRAFT'].forEach(s => [50,100,200,500].forEach(l => keys.push(WEB_CACHE_JOURNALS + s + ':' + l)));
-    cache.removeAll(keys);
+    const keys = [];
+    if (scopes.indexOf('journals') >= 0) {
+      ['ALL', 'POSTED', 'DRAFT'].forEach(status => [50, 100, 200, 500].forEach(limit => keys.push(webCacheJournalsKey_(status, limit))));
+    }
+    if (scopes.indexOf('config') >= 0) keys.push(webConfigCacheKey_());
+    if (keys.length) cache.removeAll(keys);
   } catch (e) {}
+}
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: Settings and COA are read once per request and reused by shell, page vars, dashboard and aging metadata.
+function webRequestContext_() {
+  if (WEB_REQUEST_CONTEXT) return WEB_REQUEST_CONTEXT;
+  const cacheKey = webConfigCacheKey_();
+  const cached = webCacheGet_(cacheKey);
+  const data = cached && cached.settings && cached.coa ? cached : webBuildRequestContextData_();
+  if (!cached) webCachePut_(cacheKey, data, 300);
+  WEB_REQUEST_CONTEXT = webHydrateRequestContext_(data);
+  return WEB_REQUEST_CONTEXT;
+}
+function webBuildRequestContextData_() {
+  const settings = readSettings_();
+  const coa = readCoa_();
+  return { settings: settings, coa: coa, mode: String(settings['Mode'] || '').trim().toUpperCase() === 'LIVE' ? 'LIVE' : 'PRACTICE' };
+}
+function webHydrateRequestContext_(data) {
+  const settings = data.settings || {};
+  const coa = data.coa || [];
+  return {
+    settings: settings,
+    coa: coa,
+    mode: data.mode || (String(settings['Mode'] || '').trim().toUpperCase() === 'LIVE' ? 'LIVE' : 'PRACTICE'),
+    coaMap: new Map(coa.map(a => [String(a.code).trim(), a])),
+    cashCodes: new Set(coa.filter(a => a.group === 'Cash & Cash Equivalents').map(a => String(a.code).trim())),
+    section: new Map(coa.map(a => [String(a.code).trim(), sectionOf_(a)])),
+    arCode: mappingCode_(settings, 'ar'),
+    apCode: mappingCode_(settings, 'ap'),
+    fiscalStart: Number(settings['Fiscal Year Start Month']) || 1
+  };
 }
 
 function webSetLanguage(lang) {
   setLanguage_(lang === 'ID' ? 'ID' : 'EN');
-  webInvalidateCache_();
+  webInvalidateCache_('language');
   return { success: true, language: getLanguage() };
 }
 
@@ -449,21 +699,6 @@ function webInstallSystem(options) {
 
 function webRunSetupCheck() {
   return runSetupCheck({ web: true });
-}
-
-function webExportAccountingExcel() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx';
-    const token = ScriptApp.getOAuthToken();
-    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) throw new Error('Export failed: HTTP ' + res.getResponseCode());
-    const blob = res.getBlob().setName((ss.getName() || 'Accounting') + '.xlsx');
-    const b64 = Utilities.base64Encode(blob.getBytes());
-    return { success: true, fileName: blob.getName(), mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: b64 };
-  } catch (e) {
-    return { success: false, message: e && e.message ? e.message : String(e) };
-  }
 }
 
 function webExportSopPdf() {
@@ -512,9 +747,10 @@ function webGetReportData(payload) {
     const keys = mode === 'all' ? defaultKeys : requested;
     if (!keys.length) return { success: false, message: 'Choose at least one report.' };
 
-    const settings = readSettings_();
+    const ctx = webRequestContext_();
+    const settings = ctx.settings;
     const period = Number(periodText.replace('-', ''));
-    const m0 = Number(settings['Fiscal Year Start Month']) || 1;
+    const m0 = ctx.fiscalStart;
     const year = Math.floor(period / 100), mi = period % 100 - 1;
     const monthEn = MONTH_NAMES[mi] + ' ' + year, monthId = MONTH_NAMES_ID[mi] + ' ' + year;
     const meta = {
@@ -523,7 +759,8 @@ function webGetReportData(payload) {
       bsLabel: tr_('As at end of the month ended ' + monthEn, 'Pada akhir bulan ' + monthId),
       eqLabel: tr_('Year to date to ' + monthEn, 'Sampai dengan tahun berjalan pada ' + monthId)
     };
-    const all = computeReports_(loadPostedForReports_(), readCoa_(), period, m0, meta);
+    // OPTIMIZED FOR >100K ROWS / SCALABLE: prior periods come from per-account totals; only the selected month reads journal lines.
+    const all = computeReports_(loadPostedForWebReports_(period), ctx.coa, period, m0, meta);
     const reports = {};
     keys.forEach(key => { reports[key] = webSerializeReport_(all[key]); });
     return {
@@ -561,62 +798,303 @@ function webSearchItems_(lang) {
   return items;
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: journal filters, grouping and pagination run server-side with archived-year aware reads.
 function webListJournals(options) {
   try {
     const opts = options || {};
     const status = String(opts.status || 'ALL').toUpperCase();
-    const limit = Math.max(1, Math.min(500, Number(opts.limit) || 200));
-    const cacheKey = WEB_CACHE_JOURNALS + status + ':' + limit;
+    const search = String(opts.search || '').trim().toLowerCase();
+    const startDate = String(opts.startDate || '');
+    const endDate = String(opts.endDate || '');
+    const journalId = String(opts.journalId || '').trim();
+    const pageSize = Math.max(1, Math.min(500, Number(opts.pageSize) || 50));
+    const cacheKey = webJournalListCacheKey_({ status: status, search: search, startDate: startDate, endDate: endDate, journalId: journalId, page: opts.page, pageSize: pageSize, all: opts.all });
     const cached = webCacheGet_(cacheKey);
     if (cached) return cached;
-    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
-    const values = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+
+    const values = readJournalRows_({ status: status, startDate: startDate, endDate: endDate });
     const grouped = {};
     for (let i = 0; i < values.length; i++) {
       const row = values[i];
       const id = String(row[COL.id] || '').trim();
       if (!id) continue;
+      const date = dateToIso_(row[COL.date]);
       const rowStatus = String(row[COL.status] || '').toUpperCase();
-      if (status !== 'ALL' && rowStatus !== status) continue;
       if (!grouped[id]) {
         grouped[id] = {
-          journalId: id,
-          date: '',
-          journalType: '',
-          status: rowStatus,
-          description: '',
-          reference: '',
-          party: '',
-          debit: 0,
-          credit: 0,
-          lineCount: 0,
-          postedAt: '',
-          updatedAt: ''
+          journalId: id, date: date, journalType: '', status: rowStatus,
+          description: '', reference: '', party: '', debit: 0, credit: 0,
+          lineCount: 0, postedAt: '', updatedAt: '', searchText: ''
         };
       }
-      const item = grouped[id];
-      item.lineCount += 1;
-      item.debit += Number(row[COL.debit]) || 0;
-      item.credit += Number(row[COL.credit]) || 0;
-      if (!item.date) item.date = dateToIso_(row[COL.date]);
-      if (!item.journalType) item.journalType = String(row[COL.type] || '');
-      if (!item.description && row[COL.description]) item.description = String(row[COL.description]);
-      if (!item.reference && row[COL.reference]) item.reference = String(row[COL.reference]);
-      if (!item.party && row[COL.party]) item.party = String(row[COL.party]);
-      if (!item.postedAt && row[COL.postedAt]) item.postedAt = webDateTime_(row[COL.postedAt]);
-      if (!item.updatedAt && row[COL.updatedAt]) item.updatedAt = webDateTime_(row[COL.updatedAt]);
+      const entry = grouped[id];
+      entry.searchText += [id, rowStatus, row[COL.type], row[COL.description], row[COL.reference], row[COL.party]].map(v => String(v || '').toLowerCase()).join('\u0001') + '\u0002';
+      entry.lineCount += 1;
+      entry.debit += Number(row[COL.debit]) || 0;
+      entry.credit += Number(row[COL.credit]) || 0;
+      if (!entry.journalType) entry.journalType = String(row[COL.type] || '');
+      if (!entry.description && row[COL.description]) entry.description = String(row[COL.description]);
+      if (!entry.reference && row[COL.reference]) entry.reference = String(row[COL.reference]);
+      if (!entry.party && row[COL.party]) entry.party = String(row[COL.party]);
+      if (!entry.postedAt && row[COL.postedAt]) entry.postedAt = webDateTime_(row[COL.postedAt]);
+      if (!entry.updatedAt && row[COL.updatedAt]) entry.updatedAt = webDateTime_(row[COL.updatedAt]);
     }
-    const journals = Object.keys(grouped).map(key => grouped[key])
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.journalId).localeCompare(String(a.journalId)))
-      .slice(0, limit);
-    journals.forEach(item => {
-      item.debit = r2_(item.debit);
-      item.credit = r2_(item.credit);
-    });
-    const result = { success: true, journals: journals, count: journals.length };
+
+    const all = Object.keys(grouped).map(key => grouped[key]).filter(item => {
+      if (journalId && item.journalId !== journalId) return false;
+      if (startDate && item.date < startDate) return false;
+      if (endDate && item.date > endDate) return false;
+      return !search || item.searchText.toLowerCase().includes(search);
+    }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.journalId).localeCompare(String(a.journalId)));
+    const stats = {
+      total: all.length,
+      posted: all.filter(item => item.status === 'POSTED').length,
+      draft: all.filter(item => item.status === 'DRAFT').length,
+      debit: all.reduce((n, item) => n + Number(item.debit || 0), 0)
+    };
+    const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
+    const page = Math.max(1, Math.min(totalPages, Number(opts.page) || 1));
+    const journals = (opts.all ? all : all.slice((page - 1) * pageSize, page * pageSize)).map(item => ({
+      journalId: item.journalId, date: item.date, journalType: item.journalType,
+      status: item.status, description: item.description, reference: item.reference, party: item.party,
+      debit: r2_(item.debit), credit: r2_(item.credit), lineCount: item.lineCount,
+      postedAt: item.postedAt, updatedAt: item.updatedAt
+    }));
+    const result = { success: true, journals: journals, count: journals.length, stats: stats, total: all.length, page: page, pageSize: pageSize, totalPages: totalPages };
     webCachePut_(cacheKey, result, 120);
     return result;
   } catch (error) {
     return { success: false, message: error && error.message ? error.message : String(error) };
   }
+}
+
+function webArchiveJournalYear(year) {
+  try {
+    const result = archiveJournalYear_(year);
+    webInvalidateCache_('journals');
+    return result;
+  } catch (error) {
+    return { success: false, message: error && error.message ? error.message : String(error) };
+  }
+}
+
+const EXPORT_FILE_NAMES = {
+  FINANCIAL_REPORT: 'Financial_Report',
+  TRIAL_BALANCE: 'Trial_Balance',
+  GENERAL_LEDGER: 'General_Ledger',
+  AGING: 'AR_AP_Aging',
+  JOURNAL_LIST: 'Journal_List',
+  BANK_TRANSACTIONS: 'Bank_Transactions',
+  DRAFT_MANAGEMENT: 'Draft_Management'
+};
+
+function exportCell_(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value instanceof Date) return dateToIso_(value);
+  return JSON.stringify(value);
+}
+
+function exportTodayIso_() {
+  const zone = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+  return Utilities.formatDate(new Date(), zone, 'yyyy-MM-dd');
+}
+
+function exportCompactDate_(value) {
+  const text = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text.replace(/-/g, '') : '';
+}
+
+function exportSafeToken_(value, max) {
+  const text = String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return text ? text.slice(0, max || 12) : '';
+}
+
+function exportDateToken_(p) {
+  const period = String(p.period || '').trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) return period.replace('-', '');
+  const start = exportCompactDate_(p.startDate);
+  const end = exportCompactDate_(p.endDate);
+  if (start && end) return start === end ? start : start + '-' + end;
+  if (start || end) return start || end;
+  const asOf = exportCompactDate_(p.asOf);
+  return asOf || exportCompactDate_(exportTodayIso_());
+}
+
+function exportExtraTokens_(p) {
+  const tokens = [];
+  const status = String(p.status || '').trim();
+  if (status && status !== 'ALL') tokens.push(exportSafeToken_(status, 12));
+  const account = exportSafeToken_(p.accountCode, 12);
+  if (account) tokens.push(account);
+  const profile = exportSafeToken_(p.profile, 12);
+  if (profile) tokens.push(profile);
+  return tokens.slice(0, 2);
+}
+
+function exportFileName_(type, p) {
+  const base = EXPORT_FILE_NAMES[type] || 'Export';
+  const parts = exportExtraTokens_(p).concat([exportDateToken_(p)]).filter(Boolean);
+  if (type === 'FINANCIAL_REPORT') {
+    const key = String(p.reportKey || (Array.isArray(p.reports) && p.reports.length ? p.reports[0] : '') || '').toUpperCase();
+    if (key) parts.unshift(exportSafeToken_(key, 8));
+  }
+  return base + '_' + parts.join('_') + '.xlsx';
+}
+
+function exportInDateRange_(dateValue, p) {
+  const start = exportCompactDate_(p.startDate);
+  const end = exportCompactDate_(p.endDate);
+  if (!start && !end) return true;
+  const date = exportCompactDate_(dateValue);
+  if (!date) return false;
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
+function exportMatchesSearch_(p, values) {
+  const q = String(p.search || '').trim().toLowerCase();
+  if (!q) return true;
+  return (values || []).some(value => String(exportCell_(value)).toLowerCase().includes(q));
+}
+
+function exportReady_(headers, rows, fileName) {
+  return {
+    fileName: fileName,
+    headers: (headers || []).map(exportCell_),
+    rows: (rows || []).map(row => (Array.isArray(row) ? row : [row]).map(exportCell_))
+  };
+}
+
+function exportReportRows_(p) {
+  const type = String(p.type || '').toUpperCase();
+  const key = type === 'TRIAL_BALANCE' ? 'tb' : type === 'GENERAL_LEDGER' ? 'gl'
+    : String(p.reportKey || (Array.isArray(p.reports) && p.reports.length ? p.reports[0] : '') || 'is');
+  const result = webGetReportData({
+    period: String(p.period || ''),
+    mode: 'custom',
+    reports: [key],
+    web: true
+  });
+  if (!result || !result.success) throw new Error(result && result.message ? result.message : tr_('Report data is not available.', 'Data laporan tidak tersedia.'));
+  const report = result.reports[key];
+  if (!report) throw new Error(tr_('Report data is not available.', 'Data laporan tidak tersedia.'));
+  return {
+    headers: report.header || [],
+    rows: (report.rows || []).map(row => row.c || [])
+  };
+}
+
+function exportAgingRows_(p) {
+  const asOf = String(p.asOf || p.endDate || exportTodayIso_()).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    throw new Error(tr_('Enter the date as YYYY-MM-DD.', 'Masukkan tanggal dalam format YYYY-MM-DD.'));
+  }
+  const result = generateAging(asOf, { web: true, dataOnly: true });
+  if (!result || !result.success) throw new Error(result && result.message ? result.message : tr_('Aging data is not available.', 'Data umur piutang dan utang tidak tersedia.'));
+  const headers = [tr_('Type', 'Jenis'), tr_('Customer / Supplier', 'Pelanggan / Pemasok')]
+    .concat(AGING_BUCKETS.map((bucket, i) => tr_(bucket, AGING_BUCKETS_ID[i])))
+    .concat([tr_('Open invoices', 'Faktur belum lunas'), tr_('Unapplied payments', 'Pembayaran belum dialokasikan'), tr_('Net balance', 'Saldo bersih')]);
+  const rows = [];
+  (result.reports || []).forEach(entry => {
+    const report = entry.report || {};
+    ((report.summary && report.summary.rows) || []).forEach(row => {
+      rows.push([entry.side].concat(row.c || []));
+    });
+  });
+  return {
+    headers: headers,
+    rows: rows.filter(row => exportMatchesSearch_(p, [row[1]]))
+  };
+}
+
+function exportJournalRows_(p) {
+  const result = webListJournals({
+    status: String(p.status || 'ALL').toUpperCase(),
+    search: p.search || '',
+    startDate: p.startDate || '',
+    endDate: p.endDate || '',
+    all: true
+  });
+  if (!result || !result.success) throw new Error(result && result.message ? result.message : tr_('Journal data is not available.', 'Data jurnal tidak tersedia.'));
+  const journals = result.journals || [];
+  const headers = [tr_('ID & Type', 'ID & Jenis'), tr_('Date', 'Tanggal'), tr_('Description', 'Keterangan'),
+    tr_('Party', 'Pihak'), 'Status', tr_('Debit', 'Debet'), tr_('Credit', 'Kredit'), tr_('Lines', 'Baris')];
+  const rows = journals.map(item => [
+    String(item.journalId || '') + (item.journalType ? '\n' + item.journalType : ''),
+    item.date || '',
+    String(item.description || '') + (item.reference ? '\n' + item.reference : ''),
+    item.party || '',
+    item.status || '',
+    Number(item.debit) || 0,
+    Number(item.credit) || 0,
+    Number(item.lineCount) || 0
+  ]);
+  return { headers: headers, rows: rows };
+}
+
+function exportBankRows_(p) {
+  const profile = String(p.profile || '').trim();
+  const preview = previewBankImport(profile);
+  const setup = getBankSetup();
+  const accountNames = new Map((setup.accounts || []).map(a => [String(a.code), String(a.name || '')]));
+  const edits = p.edits && typeof p.edits === 'object' ? p.edits : {};
+  const headers = [tr_('Row', 'Baris'), tr_('Date', 'Tanggal'), tr_('Description', 'Keterangan'), tr_('Reference', 'Referensi'),
+    tr_('Money out', 'Uang Keluar'), tr_('Money in', 'Uang Masuk'), tr_('Counter account', 'Akun Lawan'),
+    tr_('Customer / Supplier', 'Pelanggan / Pemasok'), 'Status'];
+  const rows = [];
+  (preview.rows || []).forEach(item => {
+    const edit = edits[String(item.key)] || {};
+    const code = String(edit.accountCode || item.accountCode || '').trim();
+    const party = edit.party !== undefined ? String(edit.party || '').trim() : String(item.party || '').trim();
+    const rawStatus = String(item.status || '').toUpperCase();
+    const statusKey = rawStatus === 'ERROR' ? 'ERROR' : rawStatus === 'DUPLICATE' ? 'DUPLICATE' : code ? 'NEW' : 'NEEDS_ACCOUNT';
+    const statusLabel = statusKey === 'ERROR' ? tr_('Error', 'Kesalahan')
+      : statusKey === 'DUPLICATE' ? tr_('Already imported', 'Sudah Diimpor')
+        : statusKey === 'NEW' ? tr_('New', 'Baru') : tr_('Needs account', 'Perlu Akun');
+    const account = code ? code + (accountNames.get(code) ? ' - ' + accountNames.get(code) : '') : '';
+    const status = String(p.status || 'ALL').toUpperCase();
+    if (status !== 'ALL' && status !== statusKey) return;
+    if (!exportInDateRange_(item.date, p)) return;
+    if (p.accountCode && !code.toLowerCase().includes(String(p.accountCode).trim().toLowerCase())) return;
+    if (!exportMatchesSearch_(p, [item.n, item.date, item.desc, item.ref, account, party, statusLabel])) return;
+    rows.push([item.n, item.date, item.desc || '', item.ref || '', Number(item.out) || 0, Number(item.in) || 0, account, party, statusLabel]);
+  });
+  return { headers: headers, rows: rows };
+}
+
+function exportDraftRows_(p) {
+  const result = getDraftList({
+    search: p.search || '', startDate: p.startDate || '', endDate: p.endDate || '',
+    failedIds: Array.isArray(p.failedIds) ? p.failedIds : [], all: true
+  });
+  if (!result || !result.success) throw new Error(result && result.message ? result.message : tr_('Draft data is not available.', 'Data draf tidak tersedia.'));
+  const headers = [tr_('Journal ID', 'ID Jurnal'), tr_('Date', 'Tanggal'), tr_('Description', 'Keterangan'),
+    tr_('Lines', 'Baris'), tr_('Debit', 'Debet'), tr_('Credit', 'Kredit'), tr_('Updated', 'Diperbarui')];
+  const rows = (result.drafts || []).map(item => [
+    item.journalId || '',
+    item.date || '',
+    String(item.description || '') + (item.journalType ? '\n' + item.journalType : ''),
+    Number(item.lineCount) || 0,
+    Number(item.debit) || 0,
+    Number(item.credit) || 0,
+    item.updatedAt || ''
+  ]);
+  return { headers: headers, rows: rows };
+}
+
+function exportReportToExcel(params) {
+  const p = params || {};
+  let type = String(p.type || '').toUpperCase().replace(/[\s-]+/g, '_');
+  if (type === 'AR_AP_AGING' || type === 'AGING_REPORT') type = 'AGING';
+  if (type === 'BANK_IMPORT' || type === 'BANK_CASH') type = 'BANK_TRANSACTIONS';
+  let data;
+  if (type === 'FINANCIAL_REPORT' || type === 'TRIAL_BALANCE' || type === 'GENERAL_LEDGER') data = exportReportRows_(p);
+  else if (type === 'AGING') data = exportAgingRows_(p);
+  else if (type === 'JOURNAL_LIST') data = exportJournalRows_(p);
+  else if (type === 'BANK_TRANSACTIONS') data = exportBankRows_(p);
+  else if (type === 'DRAFT_MANAGEMENT') data = exportDraftRows_(p);
+  else throw new Error(tr_('Unknown export type: ', 'Jenis ekspor tidak dikenal: ') + type);
+  return exportReady_(data.headers, data.rows, exportFileName_(type, p));
 }

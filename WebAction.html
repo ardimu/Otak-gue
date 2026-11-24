@@ -28,6 +28,21 @@
       font: 12px/1.55 "SFMono-Regular", Consolas, monospace;
     }
     .error { color: var(--danger, #DC2626) !important; }
+    [hidden] { display: none !important; }
+    .preview { margin-top: 18px; overflow: auto; max-height: 340px; }
+    .preview table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .preview th, .preview td { padding: 8px 10px; border-bottom: 1px solid var(--rule, #E2E8F0); text-align: left; white-space: nowrap; }
+    .preview th { position: sticky; top: 0; background: #F8FAFC; color: var(--muted, #64748B); font-size: 9.5px; text-transform: uppercase; }
+    .preview td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 4px; }
+    .hub-card {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+      padding: 13px 14px; border: 1px solid var(--rule, #E2E8F0); border-radius: 9px;
+      background: #fff; color: var(--ink, #111827); text-align: left; cursor: pointer;
+    }
+    .hub-card:hover { border-color: var(--accent, #3457D5); background: #F8FAFC; }
+    .hub-card b { font-size: 13px; }
+    .hub-card span { color: var(--muted, #64748B); font-size: 10.5px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -36,9 +51,14 @@
     <h1 id="title"></h1>
     <p class="sub" id="sub"></p>
     <div id="fields"></div>
-    <div class="row"><button class="primary" id="run" type="button"></button></div>
+    <div class="row">
+      <button class="outline" id="exportExcel" type="button" hidden><?= lang === 'ID' ? 'Ekspor Excel' : 'Export Excel' ?></button>
+      <button class="primary" id="run" type="button"></button>
+    </div>
     <pre id="out"></pre>
+    <div class="preview" id="preview" hidden></div>
   </section>
+  <?!= include(lang === 'ID' ? 'scriptId.js' : 'script.js'); ?>
   <script>
     const ACTION = <?!= JSON.stringify(action) ?>;
     const LANG = <?!= JSON.stringify(lang) ?>;
@@ -57,9 +77,9 @@
         en: ['Reports', 'AR & AP Aging Dashboard', 'Generates aging and open-items reports as at the chosen date.', 'Generate aging'],
         id: ['Laporan', 'Dashboard Umur Piutang & Utang', 'Membuat laporan umur dan item terbuka pada tanggal yang dipilih.', 'Buat laporan umur']
       },
-      'export-excel': {
-        en: ['Other Support', 'Export to Excel', 'Export the full accounting spreadsheet as an Excel (.xlsx) file.', 'Export Excel'],
-        id: ['Dukungan Lain', 'Ekspor ke Excel', 'Ekspor seluruh spreadsheet akuntansi sebagai file Excel (.xlsx).', 'Ekspor Excel']
+      'export-hub': {
+        en: ['Other Support', 'Export to Excel', 'Choose the report or list you want to export. Filters stay on the destination page.', 'Export'],
+        id: ['Dukungan Lain', 'Ekspor ke Excel', 'Pilih laporan atau daftar yang ingin diekspor. Filter tetap di halaman tujuan.', 'Ekspor']
       },
       install: {
         en: ['System', 'Install / Update System Dashboard', 'Creates or updates sheets and default settings.', 'Run install'],
@@ -85,6 +105,75 @@
         '<label for="replaceCoa" style="margin:0;font-weight:400">' +
         (LANG === 'ID' ? 'Ganti COA yang usang (lembar lama dibackup)' : 'Replace an outdated COA (old sheet is backed up)') +
         '</label></div>';
+    }
+    if (ACTION === 'export-hub') {
+      const targets = [
+        ['reports-view', 'Financial Report', 'Laporan Keuangan', 'Income statement, balance sheet, equity, cash flow', 'Laba rugi, neraca, ekuitas, arus kas'],
+        ['trial-balance', 'Trial Balance', 'Neraca Saldo', 'Trial balance for the active period', 'Neraca saldo periode aktif'],
+        ['general-ledger', 'General Ledger', 'Buku Besar', 'Detailed ledger for the active period', 'Buku besar rinci periode aktif'],
+        ['reports-aging', 'AR & AP Aging', 'Umur Piutang & Utang', 'Aging as at a chosen date', 'Umur piutang dan utang per tanggal'],
+        ['journals', 'Journal List', 'Daftar Jurnal', 'Posted, draft, date and search filters', 'Filter status, tanggal, dan pencarian'],
+        ['bank-import', 'Bank & Petty Cash', 'Bank & Kas Kecil', 'Bank rows with account and date filters', 'Baris bank dengan filter akun dan tanggal'],
+        ['drafts', 'Draft Management', 'Kelola Draf', 'Draft journals with date and search filters', 'Draf jurnal dengan filter tanggal dan pencarian']
+      ];
+      const id = LANG === 'ID';
+      $('fields').innerHTML = '<p class="sub">' + (id
+        ? 'Pilih tujuan, lalu klik tombol Ekspor Excel di halaman tersebut.'
+        : 'Choose a destination, then click Export Excel on that page.') + '</p>' +
+        '<div class="hub-grid">' + targets.map(row =>
+          '<button class="hub-card" type="button" data-page="' + row[0] + '" data-label="' + esc(id ? row[2] : row[1]) + '">' +
+          '<b>' + esc(id ? row[2] : row[1]) + '</b><span>' + esc(id ? row[4] : row[3]) + '</span></button>'
+        ).join('') + '</div>';
+      $('run').hidden = true;
+      $('fields').addEventListener('click', event => {
+        const card = event.target.closest && event.target.closest('.hub-card');
+        if (!card) return;
+        const key = card.getAttribute('data-page');
+        const label = card.getAttribute('data-label');
+        if (window.webGoPage) window.webGoPage(key, label);
+        else if (window.parent && window.parent.webNavigate) window.parent.webNavigate(key, label);
+        else window.location.href = '?page=' + encodeURIComponent(key);
+      });
+    }
+
+    function esc(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function renderAgingPreview(result) {
+      const headers = result.headers || [];
+      const rows = result.rows || [];
+      $('preview').hidden = false;
+      if (!rows.length) {
+        $('preview').innerHTML = LANG === 'ID' ? 'Tidak ada data umur piutang dan utang.' : 'No aging data to display.';
+        return;
+      }
+      let html = '<table><thead><tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>';
+      rows.forEach(row => {
+        html += '<tr>' + headers.map((h, i) => {
+          const value = row[i];
+          const cls = typeof value === 'number' ? ' class="num"' : '';
+          return '<td' + cls + '>' + esc(value) + '</td>';
+        }).join('') + '</tr>';
+      });
+      $('preview').innerHTML = html + '</tbody></table>';
+    }
+
+    function refreshAgingPreview() {
+      window.exportReportToExcel({ type: 'AGING', asOf: $('asOf').value }, null, {
+        onData: renderAgingPreview,
+        onError: message => {
+          $('preview').hidden = false;
+          $('preview').textContent = message;
+        }
+      });
+    }
+
+    if (ACTION === 'aging') {
+      $('exportExcel').hidden = false;
+      $('asOf').addEventListener('change', refreshAgingPreview);
+      refreshAgingPreview();
     }
 
     function downloadFile(result) {
@@ -133,12 +222,16 @@
       if (arg === undefined) runner[name](); else runner[name](arg);
     }
 
+    $('exportExcel').addEventListener('click', function () {
+      if (ACTION !== 'aging') return;
+      window.exportReportToExcel({ type: 'AGING', asOf: $('asOf').value }, this);
+    });
+
     $('run').addEventListener('click', function () {
       if (ACTION === 'stock-movements') call('webProcessStockMovements');
       else if (ACTION === 'stock-summary') call('webGenerateStockSummary', $('asOf').value);
-      else if (ACTION === 'aging') call('webGenerateAging', $('asOf').value);
-      else if (ACTION === 'export-excel') call('webExportAccountingExcel');
-      else if (ACTION === 'install') call('webInstallSystem', { replaceCoa: $('replaceCoa').checked });
+       else if (ACTION === 'aging') call('webGenerateAging', $('asOf').value);
+       else if (ACTION === 'install') call('webInstallSystem', { replaceCoa: $('replaceCoa').checked });
       else call('webRunSetupCheck');
     });
   </script>

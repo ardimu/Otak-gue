@@ -17,6 +17,10 @@
   ol.steps { margin: 8px 0 14px; padding-left: 20px; color: var(--muted); }
   .bar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
   .bar .field { min-width: 260px; }
+  .filterbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+  .filterbar input, .filterbar select { width: auto; min-width: 130px; }
+  .filterbar input[type=search] { min-width: 210px; }
+  .filterbar button { margin-left: auto; }
   label { display: block; font-weight: 500; margin-bottom: 4px; }
   input, select { width: 100%; padding: 7px 8px; border: 1px solid #b7c6ba; border-radius: 3px; background: #fff; font: inherit; color: var(--ink); }
   input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -80,6 +84,20 @@
 
 <div id="result" class="hidden">
   <div class="summary" id="summary"></div>
+  <div class="filterbar">
+    <input type="search" id="bankSearch" placeholder="Cari keterangan, referensi, pihak…">
+    <input type="date" id="bankFrom" aria-label="Tanggal mulai">
+    <input type="date" id="bankTo" aria-label="Tanggal akhir">
+    <select id="bankStatus">
+      <option value="ALL">Semua status</option>
+      <option value="NEW">Baru</option>
+      <option value="DUPLICATE">Sudah Diimpor</option>
+      <option value="ERROR">Kesalahan</option>
+      <option value="NEEDS_ACCOUNT">Perlu Akun</option>
+    </select>
+    <input id="bankAccount" placeholder="Kode akun">
+    <button class="quiet" id="bankExport" type="button">Ekspor Excel</button>
+  </div>
   <div class="bar">
     <div class="field" style="min-width:300px">
       <label for="bulkAcc">Akun untuk baris terpilih yang belum ditentukan akunnya</label>
@@ -124,9 +142,10 @@
   </div>
 </div>
 
+<?!= include('scriptId.js'); ?>
 <script>
 const $ = id => document.getElementById(id);
-let setup = null, data = null, busy = false, pending = null;
+let setup = null, data = null, busy = false, pending = null, rowEdits = {};
 const fmt = n => (n ? Number(n).toLocaleString('id-ID') : '');
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const accLabel = a => a.code + ' - ' + a.name;
@@ -214,7 +233,8 @@ function runBatch(fn, id, label) {
     [fn](id);
 }
 function refreshBatches() {
-  google.script.run.withSuccessHandler(renderBatches).withFailureHandler(() => {}).getImportBatches();
+  // OPTIMIZED FOR >100K ROWS / SCALABLE: tampilkan galat ringkasan batch, jangan sembunyikan scan lambat.
+  google.script.run.withSuccessHandler(renderBatches).withFailureHandler(e => say('Gagal memuat batch: ' + ((e && e.message) || e || 'Galat tidak diketahui'), 'error')).getImportBatches();
 }
 
 /* ---------- Read and review ---------- */
@@ -222,32 +242,66 @@ $('btnRead').addEventListener('click', () => {
   if (busy || !$('profile').value) return;
   setBusy(true); say('Membaca lembar...');
   google.script.run
-    .withSuccessHandler(r => { setBusy(false); data = r; say(''); render(); })
-    .withFailureHandler(e => { setBusy(false); data = null; $('result').classList.add('hidden'); say(e.message || String(e), 'error'); })
+    .withSuccessHandler(r => { setBusy(false); data = r; rowEdits = {}; say(''); render(); })
+    .withFailureHandler(e => { setBusy(false); data = null; rowEdits = {}; $('result').classList.add('hidden'); say(e.message || String(e), 'error'); })
     .previewBankImport($('profile').value);
 });
 
+function rowStatusKey(r, i) {
+  const raw = String(r.status || '').toUpperCase();
+  if (raw === 'ERROR') return 'ERROR';
+  if (raw === 'DUPLICATE') return 'DUPLICATE';
+  const edit = rowEdits[i] || {};
+  return String(edit.accountCode || r.accountCode || '').trim() ? 'NEW' : 'NEEDS_ACCOUNT';
+}
+function visibleRowIndexes() {
+  const q = $('bankSearch').value.trim().toLowerCase();
+  const from = $('bankFrom').value;
+  const to = $('bankTo').value;
+  const status = $('bankStatus').value;
+  const account = $('bankAccount').value.trim().toLowerCase();
+  return (data.rows || []).map((r, i) => ({ r: r, i: i })).filter(entry => {
+    const r = entry.r, edit = rowEdits[entry.i] || {};
+    const code = String(edit.accountCode || r.accountCode || '').trim();
+    const party = edit.party !== undefined ? String(edit.party || '').trim() : String(r.party || '').trim();
+    if (status !== 'ALL' && status !== rowStatusKey(r, entry.i)) return false;
+    if (from && String(r.date || '') < from) return false;
+    if (to && String(r.date || '') > to) return false;
+    if (account && !code.toLowerCase().includes(account)) return false;
+    if (q && ![r.n, r.date, r.desc, r.ref, code, party].some(v => String(v || '').toLowerCase().includes(q))) return false;
+    return true;
+  }).map(entry => entry.i);
+}
 function render() {
-  const rows = data.rows;
+  const indexes = visibleRowIndexes();
   const n = { ok: 0, dup: 0, err: 0 };
-  rows.forEach(r => { if (r.status === 'DUPLICATE') n.dup++; else if (r.status === 'ERROR') n.err++; else n.ok++; });
+  indexes.forEach(i => {
+    const key = rowStatusKey(data.rows[i], i);
+    if (key === 'DUPLICATE') n.dup++; else if (key === 'ERROR') n.err++; else n.ok++;
+  });
   $('summary').innerHTML = '';
-  [['Baris Dibaca', rows.length], ['Baru', n.ok], ['Sudah Diimpor', n.dup], ['Kesalahan', n.err], ['Dilewati (tanpa tanggal atau jumlah)', data.skipped]].forEach(it => {
+  [['Baris Dibaca', indexes.length], ['Baru', n.ok], ['Sudah Diimpor', n.dup], ['Kesalahan', n.err], ['Dilewati (tanpa tanggal atau jumlah)', data.skipped]].forEach(it => {
     const d = document.createElement('div'); d.innerHTML = '<span>' + esc(it[0]) + '</span><strong>' + it[1] + '</strong>'; $('summary').appendChild(d);
   });
-  $('body').innerHTML = rows.map((r, i) => {
-    const dup = r.status === 'DUPLICATE', err = r.status === 'ERROR';
-    const acc = r.accountCode ? accLabel({ code: r.accountCode, name: r.accountName }) : '';
-    const tag = err ? '<span class="tag err">Kesalahan</span>' : dup ? '<span class="tag dup">Sudah Diimpor</span>'
+  $('body').innerHTML = indexes.map(i => {
+    const r = data.rows[i];
+    const edit = rowEdits[i] || {};
+    const raw = String(r.status || '').toUpperCase();
+    const dup = raw === 'DUPLICATE', err = raw === 'ERROR';
+    const code = String(edit.accountCode || r.accountCode || '').trim();
+    const acc = code ? accLabel({ code: code, name: edit.accountName || r.accountName || '' }) : '';
+    const party = edit.party !== undefined ? String(edit.party || '') : String(r.party || '');
+    const statusKey = rowStatusKey(r, i);
+    const tag = statusKey === 'ERROR' ? '<span class="tag err">Kesalahan</span>' : statusKey === 'DUPLICATE' ? '<span class="tag dup">Sudah Diimpor</span>'
       : (acc ? '<span class="tag new">Baru</span>' : '<span class="tag need">Perlu Akun</span>');
     return `<tr class="${dup ? 'dup' : err ? 'err' : (acc ? '' : 'need')}" data-i="${i}">
       <td><input type="checkbox" class="sel" ${!dup && !err && acc ? 'checked' : ''} ${dup || err ? 'disabled' : ''}></td>
       <td>${r.n}</td><td>${esc(r.date)}</td><td>${esc(r.desc)}</td><td>${esc(r.ref)}</td>
       <td class="num">${fmt(r.out)}</td><td class="num">${fmt(r.in)}</td>
       <td><input class="acc" list="accList" value="${esc(acc)}" ${dup || err ? 'disabled' : ''} placeholder="Ketik akun"></td>
-      <td><input class="party" list="partyList" value="${esc(r.party)}" ${dup || err ? 'disabled' : ''} placeholder="Opsional" aria-invalid="${partyKnown(r.party) ? 'false' : 'true'}"><div class="note party-warning">${partyKnown(r.party) ? '' : 'Pelanggan / Pemasok tidak ditemukan di Data Induk'}</div></td>
+      <td><input class="party" list="partyList" value="${esc(party)}" ${dup || err ? 'disabled' : ''} placeholder="Opsional" aria-invalid="${partyKnown(party) ? 'false' : 'true'}"><div class="note party-warning">${partyKnown(party) ? '' : 'Pelanggan / Pemasok tidak ditemukan di Data Induk'}</div></td>
       <td>${tag}${r.note && !dup ? '<div class="note">' + esc(r.note) + '</div>' : ''}</td></tr>`;
-  }).join('') || '<tr><td colspan="10" class="note">Tidak ditemukan baris dengan tanggal yang valid. Periksa Baris Header dan Kolom Tanggal pada profil.</td></tr>';
+  }).join('') || '<tr><td colspan="10" class="note">' + (data.rows && data.rows.length ? 'Tidak ada baris yang cocok dengan filter.' : 'Tidak ditemukan baris dengan tanggal yang valid. Periksa Baris Header dan Kolom Tanggal pada profil.') + '</td></tr>';
   $('result').classList.remove('hidden');
   updateInfo();
 }
@@ -265,29 +319,80 @@ function updateInfo() {
 $('body').addEventListener('change', e => {
   if (e.target.classList.contains('acc')) {
     const tr = e.target.closest('tr');
-    tr.classList.toggle('need', !accountFromText(e.target.value));
-    if (accountFromText(e.target.value) && !tr.querySelector('.sel').disabled) tr.querySelector('.sel').checked = true;
+    const i = Number(tr.dataset.i);
+    const a = accountFromText(e.target.value);
+    rowEdits[i] = rowEdits[i] || {};
+    rowEdits[i].accountCode = a ? a.code : '';
+    rowEdits[i].accountName = a ? a.name : '';
+    tr.classList.toggle('need', !a);
+    if (a && !tr.querySelector('.sel').disabled) tr.querySelector('.sel').checked = true;
+    const checked = new Set(Array.from(document.querySelectorAll('#body .sel:checked')).map(box => Number(box.closest('tr').dataset.i)));
+    render();
+    document.querySelectorAll('#body tr[data-i]').forEach(row => {
+      const box = row.querySelector('.sel');
+      if (box && checked.has(Number(row.dataset.i))) box.checked = true;
+    });
+    return;
   }
   updateInfo();
 });
 $('body').addEventListener('input', e => {
-  if (e.target.classList.contains('party')) updatePartyWarning(e.target.closest('tr'));
+  if (e.target.classList.contains('party')) {
+    const tr = e.target.closest('tr');
+    const i = Number(tr.dataset.i);
+    rowEdits[i] = rowEdits[i] || {};
+    rowEdits[i].party = e.target.value;
+    updatePartyWarning(tr);
+  }
 });
 $('btnBulk').addEventListener('click', () => {
   const a = accountFromText($('bulkAcc').value);
   if (!a) { say('Pilih akun dari Bagan Akun.', 'error'); return; }
   say('');
-  selectedRows().forEach(tr => {
-    const inp = tr.querySelector('.acc');
-    if (!accountFromText(inp.value)) { inp.value = accLabel(a); tr.classList.remove('need'); }
+    selectedRows().forEach(tr => {
+      const inp = tr.querySelector('.acc');
+      if (!accountFromText(inp.value)) {
+        inp.value = accLabel(a);
+        const i = Number(tr.dataset.i);
+        rowEdits[i] = rowEdits[i] || {};
+        rowEdits[i].accountCode = a.code;
+        rowEdits[i].accountName = a.name;
+        tr.classList.remove('need');
+      }
+    });
+    updateInfo();
   });
-  updateInfo();
-});
 $('btnAll').addEventListener('click', () => {
   const boxes = Array.from(document.querySelectorAll('#body .sel:not(:disabled)'));
   const on = boxes.some(b => !b.checked);
   boxes.forEach(b => { b.checked = on; });
   updateInfo();
+});
+
+['bankSearch', 'bankFrom', 'bankTo', 'bankStatus', 'bankAccount'].forEach(id => {
+  $(id).addEventListener('input', () => { if (data) render(); });
+  $(id).addEventListener('change', () => { if (data) render(); });
+});
+$('bankExport').addEventListener('click', function () {
+  if (!data || busy) { say('Baca lembar Impor Bank terlebih dahulu.', 'error'); return; }
+  const edits = {};
+  visibleRowIndexes().forEach(i => {
+    const r = data.rows[i], edit = rowEdits[i] || {};
+    edits[String(r.key)] = {
+      accountCode: String(edit.accountCode || r.accountCode || '').trim(),
+      party: edit.party !== undefined ? String(edit.party) : String(r.party || '')
+    };
+  });
+  window.exportReportToExcel({
+    type: 'BANK_TRANSACTIONS',
+    profile: $('profile').value,
+    status: $('bankStatus').value,
+    search: $('bankSearch').value,
+    startDate: $('bankFrom').value,
+    endDate: $('bankTo').value,
+    accountCode: $('bankAccount').value,
+    edits: edits
+  }, this);
 });
 
 /* ---------- Import ---------- */

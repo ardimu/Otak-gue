@@ -3,6 +3,7 @@
     var status = document.getElementById('status');
 
     function showStatus(message, isError) {
+      if (!status) return;
       if (!message) {
         status.hidden = true;
         status.textContent = '';
@@ -53,5 +54,233 @@
       event.preventDefault();
       toggleSubmenu(toggle);
     });
+  })();
+
+  (function () {
+    var MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    var CRC_TABLE = (function () {
+      var table = new Uint32Array(256);
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[n] = c >>> 0;
+      }
+      return table;
+    })();
+
+    function bytesOf(text) {
+      if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(String(text));
+      var raw = unescape(encodeURIComponent(String(text)));
+      var out = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i) & 255;
+      return out;
+    }
+
+    function xmlEscape(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+        .replace(/\r/g, '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+        .replace(/\n/g, '&#10;');
+    }
+
+    function colName(index) {
+      var n = index + 1, name = '';
+      while (n > 0) {
+        n--;
+        name = String.fromCharCode(65 + (n % 26)) + name;
+        n = Math.floor(n / 26);
+      }
+      return name;
+    }
+
+    function crc32(bytes) {
+      var crc = 0xFFFFFFFF;
+      for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 255] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function makeZip(files) {
+      var parts = [], central = [], offset = 0, centralSize = 0;
+      files.forEach(function (file) {
+        var name = bytesOf(file.name);
+        var data = bytesOf(file.data);
+        var crc = crc32(data);
+        var local = new Uint8Array(30 + name.length);
+        var lv = new DataView(local.buffer);
+        lv.setUint32(0, 0x04034B50, true);
+        lv.setUint16(4, 20, true);
+        lv.setUint16(6, 0x0800, true);
+        lv.setUint16(8, 0, true);
+        lv.setUint16(10, 0, true);
+        lv.setUint16(12, 0x21, true);
+        lv.setUint32(14, crc, true);
+        lv.setUint32(18, data.length, true);
+        lv.setUint32(22, data.length, true);
+        lv.setUint16(26, name.length, true);
+        lv.setUint16(28, 0, true);
+        local.set(name, 30);
+        parts.push(local, data);
+
+        var record = new Uint8Array(46 + name.length);
+        var rv = new DataView(record.buffer);
+        rv.setUint32(0, 0x02014B50, true);
+        rv.setUint16(4, 20, true);
+        rv.setUint16(6, 20, true);
+        rv.setUint16(8, 0x0800, true);
+        rv.setUint16(10, 0, true);
+        rv.setUint16(12, 0, true);
+        rv.setUint16(14, 0x21, true);
+        rv.setUint32(16, crc, true);
+        rv.setUint32(20, data.length, true);
+        rv.setUint32(24, data.length, true);
+        rv.setUint16(28, name.length, true);
+        rv.setUint16(30, 0, true);
+        rv.setUint16(32, 0, true);
+        rv.setUint16(34, 0, true);
+        rv.setUint16(36, 0, true);
+        rv.setUint32(38, 0, true);
+        rv.setUint32(42, offset, true);
+        record.set(name, 46);
+        central.push(record);
+        offset += local.length + data.length;
+        centralSize += record.length;
+      });
+
+      var end = new Uint8Array(22);
+      var ev = new DataView(end.buffer);
+      ev.setUint32(0, 0x06054B50, true);
+      ev.setUint16(4, 0, true);
+      ev.setUint16(6, 0, true);
+      ev.setUint16(8, files.length, true);
+      ev.setUint16(10, files.length, true);
+      ev.setUint32(12, centralSize, true);
+      ev.setUint32(16, offset, true);
+      ev.setUint16(20, 0, true);
+      return new Blob(parts.concat(central, [end]), { type: MIME });
+    }
+
+    function cellXml(ref, value) {
+      if (value === null || value === undefined || value === '') return '';
+      if (typeof value === 'number' && isFinite(value)) return '<c r="' + ref + '"><v>' + value + '</v></c>';
+      return '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(value) + '</t></is></c>';
+    }
+
+    function sheetXml(headers, rows) {
+      var all = [headers || []].concat(rows || []);
+      var width = 0;
+      all.forEach(function (row) { width = Math.max(width, (row || []).length); });
+      var dimension = width ? 'A1:' + colName(width - 1) + ((rows || []).length + 1) : 'A1';
+      var xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<dimension ref="' + dimension + '"/><sheetData>';
+      all.forEach(function (row, rowIndex) {
+        var cells = '';
+        (row || []).forEach(function (value, colIndex) {
+          cells += cellXml(colName(colIndex) + (rowIndex + 1), value);
+        });
+        xml += '<row r="' + (rowIndex + 1) + '">' + cells + '</row>';
+      });
+      return xml + '</sheetData></worksheet>';
+    }
+
+    function contentTypesXml() {
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+        '</Types>';
+    }
+
+    function rootRelsXml() {
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        '</Relationships>';
+    }
+
+    function workbookXml() {
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    }
+
+    function workbookRelsXml() {
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+        '</Relationships>';
+    }
+
+    function stylesXml() {
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+        '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
+        '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+        '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+        '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+        '</styleSheet>';
+    }
+
+    function buildXlsx(headers, rows) {
+      return makeZip([
+        { name: '[Content_Types].xml', data: contentTypesXml() },
+        { name: '_rels/.rels', data: rootRelsXml() },
+        { name: 'xl/workbook.xml', data: workbookXml() },
+        { name: 'xl/_rels/workbook.xml.rels', data: workbookRelsXml() },
+        { name: 'xl/styles.xml', data: stylesXml() },
+        { name: 'xl/worksheets/sheet1.xml', data: sheetXml(headers, rows) }
+      ]);
+    }
+
+    function download(blob, fileName) {
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = fileName || 'Export.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }
+
+    window.exportReportToExcel = function (params, button, options) {
+      options = options || {};
+      if (button && button.disabled) return Promise.resolve(null);
+      var original = button ? button.textContent : '';
+      if (button) { button.disabled = true; button.textContent = '…'; }
+      function restore() { if (button) { button.disabled = false; button.textContent = original; } }
+      function problem(message) {
+        if (options.onError) options.onError(message);
+        else alert('Export failed: ' + message);
+      }
+      return new Promise(function (resolve) {
+        google.script.run
+          .withSuccessHandler(function (result) {
+            restore();
+            if (!result || !result.fileName || !Array.isArray(result.headers) || !Array.isArray(result.rows)) {
+              problem('Invalid export response.');
+              resolve(null);
+              return;
+            }
+            if (options.onData) { options.onData(result); resolve(result); return; }
+            try { download(buildXlsx(result.headers, result.rows), result.fileName); resolve(result); }
+            catch (error) { problem(error && error.message ? error.message : String(error)); resolve(null); }
+          })
+          .withFailureHandler(function (error) {
+            restore();
+            problem(error && error.message ? error.message : String(error));
+            resolve(null);
+          })
+          .exportReportToExcel(params || {});
+      });
+    };
   })();
 </script>

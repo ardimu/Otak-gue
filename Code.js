@@ -19,8 +19,13 @@
  */
 
 const SHEETS = { SETTINGS: 'Settings', COA: 'COA', JOURNAL: 'Journal' };
+const JOURNAL_ARCHIVE_PREFIX = 'Journal_';
+const REPORT_SUMMARY_SHEET = 'Report Summary';
+const REPORT_SUMMARY_HEADERS = ['Period', 'Type', 'AccountCode', 'Debit', 'Credit', 'UpdatedAt'];
 const STATUS = { DRAFT: 'DRAFT', POSTED: 'POSTED' };
 const LOCK_MS = 30000;
+const POST_SESSION_PREFIX = 'postall:';
+const POST_SESSION_TTL = 600;
 const TOLERANCE = 0.005;
 const BUSINESS_TYPES = ['Service', 'Trading', 'Manufacturing'];
 
@@ -423,6 +428,8 @@ function installSystem(options) {
       'Check them, then delete or archive them.');
   }
 
+  // OPTIMIZED FOR >100K ROWS / SCALABLE: setup changes config and journal shape, so only config and journal scopes are invalidated.
+  try { if (typeof webInvalidateCache_ === 'function') { webInvalidateCache_('config'); webInvalidateCache_('journals'); } } catch (e) {}
   const message = log.join('\n') + '\n\nNext: ACCOUNTING > Setup > Check COA & Settings.';
   if (web) return { success: true, log: log.join('\n'), message: message };
   ui.alert('Setup finished', message, ui.ButtonSet.OK);
@@ -882,7 +889,7 @@ function saveJournal(payload) {
     });
     replaceRows_(sheet, oldRows, rows, journalId);
 
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return {
       success: true,
       journalId: journalId,
@@ -1056,30 +1063,35 @@ function nextJournalId_(dateValue, sheet) {
    6. DRAFTS
 ============================================================ */
 
-function getDraftList() {
-  const sheet = getRequiredSheet_(SHEETS.JOURNAL);
-  if (sheet.getLastRow() < 2) return [];
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+// OPTIMIZED FOR >100K ROWS / SCALABLE: draft grouping, search, date filter and pagination run server-side with archived-year aware reads.
+function getDraftList(options) {
+  const opt = options || {};
+  const data = readJournalRows_({ status: STATUS.DRAFT, startDate: opt.startDate, endDate: opt.endDate });
   const settings = readSettings_();
   const codes = ['ar', 'ap'].map(k => String(settings[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim());
+  const q = String(opt.search || '').trim().toLowerCase();
+  const idOnly = String(opt.journalId || '').trim();
+  const failedIds = Array.isArray(opt.failedIds) ? opt.failedIds.map(String) : null;
   const groups = new Map();
+
   data.forEach((r, i) => {
-    if (String(r[COL.status]) !== STATUS.DRAFT) return;
-    const id = String(r[COL.id]).trim();
+    const id = String(r[COL.id] || '').trim();
     if (!id) return;
+    const date = dateToIso_(r[COL.date]);
     if (!groups.has(id)) {
       groups.set(id, {
-        journalId: id, date: dateToIso_(r[COL.date]), journalType: String(r[COL.type]),
-        description: String(r[COL.description]), reference: String(r[COL.reference]),
-        debit: 0, credit: 0, lineCount: 0, updatedMs: 0, missingParty: 0, missingRows: []
+        journalId: id, date: date, journalType: String(r[COL.type] || ''),
+        description: String(r[COL.description] || ''), reference: String(r[COL.reference] || ''),
+        debit: 0, credit: 0, lineCount: 0, updatedMs: 0, missingParty: 0, missingRows: [],
+        searchText: [id, r[COL.type], r[COL.description], r[COL.reference]].map(v => String(v || '').toLowerCase()).join('\u0001')
       });
     }
     const g = groups.get(id);
-    g.debit += Number(r[COL.debit] || 0);
-    g.credit += Number(r[COL.credit] || 0);
+    g.debit += Number(r[COL.debit]) || 0;
+    g.credit += Number(r[COL.credit]) || 0;
     g.lineCount++;
     if (r[COL.updatedAt] instanceof Date) g.updatedMs = Math.max(g.updatedMs, r[COL.updatedAt].getTime());
-    if (codes.includes(String(r[COL.accountCode]).trim()) && !String(r[COL.partyId] || '').trim()) {
+    if (codes.includes(String(r[COL.accountCode] || '').trim()) && !String(r[COL.partyId] || '').trim()) {
       g.missingParty++;
       const debit = Number(r[COL.debit]) || 0, credit = Number(r[COL.credit]) || 0;
       const amount = debit > 0 ? debit : credit;
@@ -1088,8 +1100,15 @@ function getDraftList() {
       g.missingRows.push('Row ' + (i + 2) + ' - ' + desc + ' Rp ' + Number(amount).toLocaleString('id-ID') + ' - ' + label);
     }
   });
-  return Array.from(groups.values())
-    .sort((a, b) => b.updatedMs - a.updatedMs)
+
+  const drafts = Array.from(groups.values()).filter(g => {
+    if (idOnly && g.journalId !== idOnly) return false;
+    if (failedIds && failedIds.indexOf(g.journalId) < 0) return false;
+    if (opt.startDate && g.date < opt.startDate) return false;
+    if (opt.endDate && g.date > opt.endDate) return false;
+    return !q || g.searchText.includes(q);
+  })
+    .sort((a, b) => b.updatedMs - a.updatedMs || String(b.journalId).localeCompare(String(a.journalId)))
     .map(g => ({
       journalId: g.journalId, date: g.date, journalType: g.journalType,
       description: g.description, reference: g.reference,
@@ -1098,13 +1117,28 @@ function getDraftList() {
       updatedAt: g.updatedMs ? Utilities.formatDate(new Date(g.updatedMs),
         SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'dd MMM yyyy HH:mm') : ''
     }));
+  const stats = {
+    total: drafts.length,
+    debit: drafts.reduce((n, d) => n + Number(d.debit || 0), 0),
+    credit: drafts.reduce((n, d) => n + Number(d.credit || 0), 0),
+    review: drafts.filter(d => Number(d.missingParty) > 0).length
+  };
+  if (opt.idsOnly) return { success: true, ids: drafts.map(d => d.journalId), stats: stats, total: drafts.length };
+
+  const pageSize = Math.max(1, Math.min(500, Number(opt.pageSize) || 50));
+  const totalPages = Math.max(1, Math.ceil(drafts.length / pageSize));
+  const page = Math.max(1, Math.min(totalPages, Number(opt.page) || 1));
+  const rows = opt.all ? drafts : drafts.slice((page - 1) * pageSize, page * pageSize);
+  return { success: true, drafts: rows, stats: stats, total: drafts.length, count: rows.length, page: page, pageSize: pageSize, totalPages: totalPages };
 }
 
 /** Returns plain strings and numbers only. Date objects cannot cross google.script.run. */
 function getDraftById(journalId) {
   const id = String(journalId || '').trim();
   if (!id) throw new Error('Journal ID is empty.');
-  const found = loadJournalRows_(getRequiredSheet_(SHEETS.JOURNAL), id);
+  const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+  const index = buildJournalIndex_(sheet, [id]);
+  const found = { rows: readJournalRowsByNumbers_(sheet, index[id] ? index[id].numbers : []).map(x => x.row) };
   if (!found.rows.length) throw new Error(`Draft ${id} was not found.`);
   if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) {
     throw new Error(`Journal ${id} is already posted and cannot be edited.`);
@@ -1151,14 +1185,15 @@ function deleteDraft(journalId) {
   try {
     const id = String(journalId || '').trim();
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
-    const found = loadJournalRows_(sheet, id);
-    if (!found.rows.length) throw new Error(`Draft ${id} was not found.`);
-    if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) {
+    const index = buildJournalIndex_(sheet, [id]);
+    const found = readJournalRowsByNumbers_(sheet, index[id] ? index[id].numbers : []);
+    if (!found.length) throw new Error(`Draft ${id} was not found.`);
+    if (found.some(item => String(item.row[COL.status]) !== STATUS.DRAFT)) {
       throw new Error(`Journal ${id} is posted. Posted journals cannot be deleted.`);
     }
-    found.rowNumbers.slice().sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
+    found.map(item => item.number).sort((a, b) => b - a).forEach(r => sheet.deleteRow(r));
     SpreadsheetApp.flush();
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return { success: true, journalId: id, message: tr_(`Draft ${id} deleted.`, `Draf ${id} telah dihapus.`) };
   } finally {
     lock.releaseLock();
@@ -1172,35 +1207,255 @@ function postDraftFromManagement(journalId) {
   try {
     const id = String(journalId || '').trim();
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
-    const found = loadJournalRows_(sheet, id);
-    if (!found.rows.length) throw new Error(`Draft ${id} was not found.`);
-    if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) {
+    const index = buildJournalIndex_(sheet, [id]);
+    const found = readJournalRowsByNumbers_(sheet, index[id] ? index[id].numbers : []);
+    if (!found.length) throw new Error(`Draft ${id} was not found.`);
+    if (found.some(item => String(item.row[COL.status]) !== STATUS.DRAFT)) {
       throw new Error(`Journal ${id} is already posted.`);
     }
-    const lines = found.rows.map(r => ({
-      accountCode: String(r[COL.accountCode]).trim(),
-      debit: Number(r[COL.debit] || 0),
-      credit: Number(r[COL.credit] || 0),
-      partyId: String(r[COL.partyId] || '')
+    const lines = found.map(item => ({
+      accountCode: String(item.row[COL.accountCode]).trim(),
+      debit: Number(item.row[COL.debit] || 0),
+      credit: Number(item.row[COL.credit] || 0),
+      partyId: String(item.row[COL.partyId] || '')
     }));
     validateLines_(lines, getCoaMap_(), true);
     requirePartyOnArAp_(lines);
-    assertNotLocked_(parseLocalDate_(found.rows[0][COL.date]));
+    assertNotLocked_(parseLocalDate_(found[0].row[COL.date]));
 
     const now = new Date();
     const user = getCurrentUser_();
-    found.rows.forEach((r, i) => {
-      r[COL.status] = STATUS.POSTED;
-      r[COL.postedAt] = now;
-      r[COL.postedBy] = user;
-      r[COL.updatedAt] = now;
-      sheet.getRange(found.rowNumbers[i], 1, 1, JOURNAL_HEADERS.length).setValues([r]);
+    found.forEach(item => {
+      const row = item.row.slice();
+      row[COL.status] = STATUS.POSTED;
+      row[COL.postedAt] = now;
+      row[COL.postedBy] = user;
+      row[COL.updatedAt] = now;
+      sheet.getRange(item.number, 1, 1, JOURNAL_HEADERS.length).setValues([row]);
     });
     SpreadsheetApp.flush();
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return { success: true, journalId: id, message: tr_(`Journal ${id} posted.`, `Jurnal ${id} telah diposting.`) };
   } finally {
     lock.releaseLock();
+  }
+}
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: bulk post reads the Journal once into an id-to-row index and reuses it across 50-draft chunks.
+function postSessionKey_(token) {
+  return POST_SESSION_PREFIX + String(token);
+}
+
+function postSessionGet_(token) {
+  try {
+    const raw = CacheService.getScriptCache().get(postSessionKey_(token));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function postSessionPut_(token, session) {
+  const raw = JSON.stringify(session);
+  if (raw.length > 95000) throw new Error('Post list is too large. Post it in smaller groups.');
+  CacheService.getScriptCache().put(postSessionKey_(token), raw, POST_SESSION_TTL);
+}
+
+function postSessionClear_(token) {
+  try { CacheService.getScriptCache().remove(postSessionKey_(token)); } catch (e) {}
+}
+
+function buildJournalIndex_(sheet, ids) {
+  const wanted = new Set((ids || []).map(id => String(id || '').trim()).filter(Boolean));
+  const out = {};
+  const last = sheet.getLastRow();
+  if (last < 2 || !wanted.size) return out;
+  sheet.getRange(2, 1, last - 1, JOURNAL_HEADERS.length).getValues().forEach((r, i) => {
+    const id = String(r[COL.id] || '').trim();
+    if (!wanted.has(id)) return;
+    if (!out[id]) out[id] = { numbers: [], statuses: {} };
+    out[id].numbers.push(i + 2);
+    const status = String(r[COL.status] || '').toUpperCase();
+    out[id].statuses[status] = true;
+  });
+  return out;
+}
+
+function journalIndexStatus_(entry) {
+  if (!entry) return '';
+  const keys = Object.keys(entry.statuses || {});
+  if (!keys.length) return '';
+  return keys.length === 1 ? keys[0] : 'MIXED';
+}
+
+function readJournalRowsByNumbers_(sheet, numbers) {
+  const sorted = (numbers || []).slice().sort((a, b) => a - b);
+  const out = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+    const start = sorted[i];
+    sheet.getRange(start, 1, j - i + 1, JOURNAL_HEADERS.length).getValues().forEach((row, k) => {
+      out.push({ number: start + k, row: row });
+    });
+    i = j + 1;
+  }
+  return out;
+}
+
+function beginPostAll(journalIds) {
+  try {
+    const ids = [], seen = new Set();
+    (Array.isArray(journalIds) ? journalIds : []).forEach(value => {
+      const id = String(value || '').trim();
+      if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+    });
+    if (!ids.length) return { success: false, message: tr_('No drafts to post.', 'Tidak ada draf untuk diposting.') };
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const index = buildJournalIndex_(sheet, ids);
+    const map = {}, draftIds = [], failures = [];
+    ids.forEach(id => {
+      const entry = index[id];
+      if (!entry) { failures.push({ journalNo: id, reason: tr_('Draft was not found.', 'Draf tidak ditemukan.') }); return; }
+      if (journalIndexStatus_(entry) !== STATUS.DRAFT) {
+        failures.push({ journalNo: id, reason: tr_('Journal is already posted.', 'Jurnal sudah diposting.') });
+        return;
+      }
+      map[id] = entry.numbers;
+      draftIds.push(id);
+    });
+    if (!draftIds.length) return { success: false, token: '', total: 0, failures: failures, message: tr_('No drafts to post.', 'Tidak ada draf untuk diposting.') };
+    const token = Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    postSessionPut_(token, {
+      token: token, ids: draftIds, map: map, index: 0, total: draftIds.length,
+      postedCount: 0, failures: failures, missingPartyLines: 0, stopped: false,
+      startedAt: new Date().toISOString()
+    });
+    return { success: true, token: token, total: draftIds.length, skipped: failures.length,
+      message: tr_(draftIds.length + ' drafts ready to post.', draftIds.length + ' draf siap diposting.') };
+  } catch (error) {
+    return { success: false, message: error && error.message ? error.message : String(error) };
+  }
+}
+
+function postAllChunk(token, size) {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
+  try {
+    const session = postSessionGet_(token);
+    if (!session) return { success: false, message: tr_('Post session expired. Stop and start Post All again.', 'Sesi posting kedaluwarsa. Hentikan dan mulai Posting Semua lagi.') };
+    if (session.stopped) return { success: true, token: token, stopped: true, postedIds: [], failures: [], progress: postSessionProgress_(session) };
+    if (session.index >= session.ids.length) return { success: true, token: token, completed: true, postedIds: [], failures: [], progress: postSessionProgress_(session) };
+
+    const count = Math.max(1, Math.min(50, Number(size) || 50));
+    const slice = session.ids.slice(session.index, session.index + count);
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const coaMap = getCoaMap_(), settings = readSettings_();
+    const now = new Date(), user = getCurrentUser_();
+    const updates = [], postedIds = [], failures = [];
+    let missingPartyLines = 0;
+
+    slice.forEach(id => {
+      try {
+        const found = readJournalRowsByNumbers_(sheet, session.map[id] || []);
+        if (!found.length) throw new Error(tr_('Draft was not found.', 'Draf tidak ditemukan.'));
+        if (found.some(item => String(item.row[COL.status] || '').toUpperCase() !== STATUS.DRAFT)) {
+          throw new Error(tr_('Journal is already posted.', 'Jurnal sudah diposting.'));
+        }
+        const lines = found.map(item => ({
+          accountCode: String(item.row[COL.accountCode] || '').trim(),
+          debit: Number(item.row[COL.debit]) || 0,
+          credit: Number(item.row[COL.credit]) || 0,
+          partyId: String(item.row[COL.partyId] || '').trim()
+        }));
+        validateLines_(lines, coaMap, true);
+        assertNotLocked_(parseLocalDate_(found[0].row[COL.date]));
+        missingPartyLines += countMissingParty_(lines, settings);
+        found.forEach(item => {
+          const before = item.row.slice(), after = item.row.slice();
+          after[COL.status] = STATUS.POSTED;
+          after[COL.postedAt] = now;
+          after[COL.postedBy] = user;
+          after[COL.updatedAt] = now;
+          updates.push({ number: item.number, before: before, after: after });
+        });
+        postedIds.push(id);
+      } catch (e) {
+        failures.push({ journalNo: id, reason: e.message });
+      }
+    });
+
+    if (updates.length) writeDraftPosts_(sheet, updates);
+    SpreadsheetApp.flush();
+    if (postedIds.length) {
+      try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
+    }
+    session.index += slice.length;
+    session.postedCount = (Number(session.postedCount) || 0) + postedIds.length;
+    session.failures = session.failures.concat(failures);
+    session.missingPartyLines += missingPartyLines;
+    postSessionPut_(token, session);
+    return {
+      success: true, token: token, postedIds: postedIds, failures: failures,
+      missingPartyLines: missingPartyLines, progress: postSessionProgress_(session),
+      completed: session.index >= session.ids.length
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function postSessionProgress_(session) {
+  return {
+    done: Number(session.index) || 0,
+    total: Number(session.total) || 0,
+    posted: Number(session.postedCount) || 0,
+    failed: (session.failures || []).length
+  };
+}
+
+function stopPostAll(token) {
+  try {
+    const session = postSessionGet_(token);
+    if (!session) return { success: false, message: tr_('Post session expired.', 'Sesi posting kedaluwarsa.') };
+    session.stopped = true;
+    postSessionPut_(token, session);
+    return { success: true, token: token, progress: postSessionProgress_(session) };
+  } catch (error) {
+    return { success: false, message: error && error.message ? error.message : String(error) };
+  }
+}
+
+function checkPostStatus(journalIds) {
+  try {
+    const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    let ids = (Array.isArray(journalIds) ? journalIds : []).map(id => String(id || '').trim()).filter(Boolean);
+    if (!ids.length) {
+      const last = sheet.getLastRow();
+      if (last >= 2) {
+        const seen = new Set();
+        sheet.getRange(2, COL.id + 1, last - 1, 1).getDisplayValues().forEach(r => {
+          const id = String(r[0] || '').trim();
+          if (id) seen.add(id);
+        });
+        ids = Array.from(seen);
+      }
+    }
+    const index = buildJournalIndex_(sheet, ids);
+    const posted = [], draft = [], mixed = [], missing = [];
+    ids.forEach(id => {
+      const status = journalIndexStatus_(index[id]);
+      if (status === STATUS.POSTED) posted.push(id);
+      else if (status === STATUS.DRAFT) draft.push(id);
+      else if (status === 'MIXED') mixed.push(id);
+      else missing.push(id);
+    });
+    return {
+      success: true, total: ids.length,
+      posted: posted.length, draft: draft.length, mixed: mixed.length, missing: missing.length,
+      postedIds: posted, draftIds: draft, mixedIds: mixed, missingIds: missing
+    };
+  } catch (error) {
+    return { success: false, message: error && error.message ? error.message : String(error) };
   }
 }
 
@@ -1212,29 +1467,30 @@ function postDraftList(journalIds) {
     const ids = (Array.isArray(journalIds) ? journalIds : []).map(x => String(x || '').trim()).filter(Boolean);
     if (!ids.length) return { posted: [], failures: [], missingPartyLines: 0, message: tr_('No drafts to post', 'Tidak ada draf untuk diposting') };
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
+    const index = buildJournalIndex_(sheet, ids);
     const coaMap = getCoaMap_(), settings = readSettings_();
     const now = new Date(), user = getCurrentUser_();
     const posted = [], failures = [], updates = [];
     let missingPartyLines = 0;
     ids.forEach(id => {
       try {
-        const found = loadJournalRows_(sheet, id);
-        if (!found.rows.length) throw new Error('Draft was not found.');
-        if (found.rows.some(r => String(r[COL.status]) !== STATUS.DRAFT)) throw new Error('Journal is already posted.');
-        const lines = found.rows.map(r => ({
-          accountCode: String(r[COL.accountCode]).trim(), debit: Number(r[COL.debit] || 0),
-          credit: Number(r[COL.credit] || 0), partyId: String(r[COL.partyId] || '')
+        const found = readJournalRowsByNumbers_(sheet, index[id] ? index[id].numbers : []);
+        if (!found.length) throw new Error('Draft was not found.');
+        if (found.some(item => String(item.row[COL.status]) !== STATUS.DRAFT)) throw new Error('Journal is already posted.');
+        const lines = found.map(item => ({
+          accountCode: String(item.row[COL.accountCode]).trim(), debit: Number(item.row[COL.debit] || 0),
+          credit: Number(item.row[COL.credit] || 0), partyId: String(item.row[COL.partyId] || '')
         }));
         validateLines_(lines, coaMap, true);
-        assertNotLocked_(parseLocalDate_(found.rows[0][COL.date]));
+        assertNotLocked_(parseLocalDate_(found[0].row[COL.date]));
         missingPartyLines += countMissingParty_(lines, settings);
-        found.rows.forEach((r, i) => {
-          const before = r.slice();
-          r[COL.status] = STATUS.POSTED;
-          r[COL.postedAt] = now;
-          r[COL.postedBy] = user;
-          r[COL.updatedAt] = now;
-          updates.push({ number: found.rowNumbers[i], before: before, after: r });
+        found.forEach(item => {
+          const before = item.row.slice(), after = item.row.slice();
+          after[COL.status] = STATUS.POSTED;
+          after[COL.postedAt] = now;
+          after[COL.postedBy] = user;
+          after[COL.updatedAt] = now;
+          updates.push({ number: item.number, before: before, after: after });
         });
         posted.push(id);
       } catch (e) {
@@ -1243,7 +1499,7 @@ function postDraftList(journalIds) {
     });
     if (updates.length) writeDraftPosts_(sheet, updates);
     SpreadsheetApp.flush();
-    if (posted.length) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {} }
+    if (posted.length) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {} }
     if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
     return { posted: posted, failures: failures, missingPartyLines: missingPartyLines,
       message: tr_(posted.length + ' posted, ' + failures.length + ' failed.', posted.length + ' diposting, ' + failures.length + ' gagal.') };
@@ -1362,6 +1618,113 @@ function dateToIso_(value) {
   return Utilities.formatDate(d, SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
 }
 
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: journal reads skip fully archived years and only touch archive sheets overlapping the requested period.
+function journalArchiveSheetName_(year) {
+  return JOURNAL_ARCHIVE_PREFIX + String(year);
+}
+
+function journalArchivedYears_() {
+  const names = SpreadsheetApp.getActiveSpreadsheet().getSheets().map(sheet => sheet.getName());
+  return names.map(name => /^Journal_(\d{4})$/.exec(name))
+    .filter(match => !!match)
+    .map(match => Number(match[1]))
+    .sort((a, b) => a - b);
+}
+
+function journalRowPeriod_(row) {
+  const value = Number(row[COL.period]) || 0;
+  if (value) return value;
+  const date = row[COL.date] instanceof Date ? row[COL.date] : new Date(row[COL.date]);
+  if (isNaN(date.getTime())) return 0;
+  return date.getFullYear() * 100 + date.getMonth() + 1;
+}
+
+function journalPeriodRange_(options) {
+  const opt = options || {};
+  const from = Number(opt.fromPeriod) || 0;
+  const to = Number(opt.toPeriod) || 999999;
+  const start = /^(\d{4})-(\d{2})/.exec(String(opt.startDate || ''));
+  const end = /^(\d{4})-(\d{2})/.exec(String(opt.endDate || ''));
+  return {
+    from: start ? Number(start[1] + start[2]) : from,
+    to: end ? Number(end[1] + end[2]) : to
+  };
+}
+
+function readJournalRows_(options) {
+  const opt = options || {};
+  const range = journalPeriodRange_(opt);
+  const status = String(opt.status || 'ALL').toUpperCase();
+  const archived = new Set(journalArchivedYears_());
+  const out = [];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const active = ss.getSheetByName(SHEETS.JOURNAL);
+  if (active && active.getLastRow() > 1) {
+    const values = active.getRange(2, 1, active.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+    values.forEach(row => {
+      const period = journalRowPeriod_(row);
+      if (period < range.from || period > range.to) return;
+      if (archived.has(Math.floor(period / 100))) return;
+      if (status !== 'ALL' && String(row[COL.status] || '').toUpperCase() !== status) return;
+      out.push(row);
+    });
+  }
+  archived.forEach(year => {
+    if (year * 100 + 12 < range.from || year * 100 + 1 > range.to) return;
+    const sheet = ss.getSheetByName(journalArchiveSheetName_(year));
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOURNAL_HEADERS.length).getValues();
+    values.forEach(row => {
+      const period = journalRowPeriod_(row);
+      if (period < range.from || period > range.to) return;
+      if (status !== 'ALL' && String(row[COL.status] || '').toUpperCase() !== status) return;
+      out.push(row);
+    });
+  });
+  return out;
+}
+
+function archiveJournalYear_(year) {
+  const targetYear = Number(year);
+  if (!/^\d{4}$/.test(String(year)) || targetYear < 1900) throw new Error('Invalid journal year.');
+  if (targetYear >= new Date().getFullYear()) throw new Error('Only completed years can be archived.');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const active = getRequiredSheet_(SHEETS.JOURNAL);
+  const last = active.getLastRow();
+  if (last < 2) return { success: true, year: targetYear, archived: 0 };
+  const values = active.getRange(2, 1, last - 1, JOURNAL_HEADERS.length).getValues();
+  const groups = [];
+  let start = -1;
+  for (let i = 0; i < values.length; i++) {
+    const match = Math.floor(journalRowPeriod_(values[i]) / 100) === targetYear;
+    if (match && start < 0) start = i + 2;
+    if (!match && start >= 0) {
+      groups.push({ start: start, count: i + 2 - start });
+      start = -1;
+    }
+  }
+  if (start >= 0) groups.push({ start: start, count: last - start + 1 });
+  if (!groups.length) return { success: true, year: targetYear, archived: 0 };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_MS);
+  try {
+    const name = journalArchiveSheetName_(targetYear);
+    let archive = ss.getSheetByName(name);
+    if (!archive) archive = ss.insertSheet(name);
+    const head = archive.getRange(1, 1, 1, JOURNAL_HEADERS.length).getDisplayValues()[0];
+    if (head[0] !== JOURNAL_HEADERS[0]) archive.getRange(1, 1, 1, JOURNAL_HEADERS.length).setValues([JOURNAL_HEADERS]);
+    groups.forEach(group => {
+      const rows = active.getRange(group.start, 1, group.count, JOURNAL_HEADERS.length).getValues();
+      archive.getRange(archive.getLastRow() + 1, 1, rows.length, JOURNAL_HEADERS.length).setValues(rows);
+    });
+    groups.slice().reverse().forEach(group => active.deleteRows(group.start, group.count));
+    return { success: true, year: targetYear, archived: groups.reduce((n, group) => n + group.count, 0) };
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 /* ============================================================
    8. PARTIES

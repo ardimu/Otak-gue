@@ -77,7 +77,11 @@ function setSettingValue_(key, value) {
   } else {
     sheet.getRange(row, 2).setValue(next);
   }
-  if (oldValue !== next) writeSettingsLog_(key, oldValue, next);
+  if (oldValue !== next) {
+    writeSettingsLog_(key, oldValue, next);
+    // OPTIMIZED FOR >100K ROWS / SCALABLE: settings edits invalidate only the config-backed caches.
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('config'); } catch (e) {}
+  }
 }
 
 function getCompanyMode_() {
@@ -234,6 +238,8 @@ function deleteSettingValue_(key) {
       const oldValue = String(values[i][1]);
       sheet.deleteRow(i + 2);
       writeSettingsLog_(key, oldValue, '');
+      // OPTIMIZED FOR >100K ROWS / SCALABLE: settings removal invalidates only the config-backed caches.
+      try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('config'); } catch (e) {}
       return true;
     }
   }
@@ -332,6 +338,8 @@ function resetPracticeData() {
   try {
     clearPracticeData_();
     writeSettingsLog_('Practice Data', 'Present', 'Deleted');
+    // OPTIMIZED FOR >100K ROWS / SCALABLE: reset invalidates journal and dashboard caches, leaving unrelated caches intact.
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return { success: true, message: tr_('Practice data has been reset.', 'Data latihan telah diatur ulang.') };
   } finally {
     lock.releaseLock();
@@ -352,6 +360,8 @@ function goLive(companyName) {
   if (!lock.tryLock(LOCK_MS)) throw new Error('The system is busy. Please try again in a moment.');
   try {
     clearPracticeData_();
+    // OPTIMIZED FOR >100K ROWS / SCALABLE: go-live clears journal data, so journal and dashboard caches are invalidated once here.
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     setSettingValue_('Mode', 'LIVE');
     setSettingValue_('Go Live Date', isoDate_(new Date()));
     setSettingValue_('Went Live By', getCurrentUser_());

@@ -14,6 +14,7 @@
     .rv-actions { display: flex; align-items: center; gap: 10px; }
     .rv-actions a { padding: 8px 12px; border: 1px solid var(--rule, #E2E8F0); border-radius: 8px; background: #fff; color: var(--accent, #3457D5); font-size: 11px; font-weight: 700; text-decoration: none; }
     .rv-actions a:hover { background: var(--accent-soft, #EEF2FF); }
+    .rv-actions button { padding: 8px 12px; border: 1px solid var(--accent, #3457D5); border-radius: 8px; background: var(--accent, #3457D5); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; }
     .rv-stamp { color: var(--muted, #64748B); font-size: 10px; }
     .rv-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
     .rv-tab { padding: 8px 13px; border: 1px solid var(--rule, #E2E8F0); border-radius: 999px; background: #fff; color: var(--muted, #64748B); font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -48,6 +49,7 @@
       <div class="rv-actions">
         <span class="rv-stamp" id="rvStamp"></span>
         <a href="?page=reports-view" id="rvAllLink"><?= lang === 'ID' ? 'Semua laporan keuangan' : 'All financial reports' ?></a>
+        <button type="button" id="rvExport"><?= lang === 'ID' ? 'Ekspor Excel' : 'Export Excel' ?></button>
       </div>
     </div>
     <div class="rv-warn" id="rvWarn" hidden></div>
@@ -56,6 +58,7 @@
     <div class="rv-foot"><?= lang === 'ID' ? 'Dihitung langsung dari jurnal posted. Tidak ada sheet yang diubah.' : 'Calculated directly from posted journals. No spreadsheet sheet is changed.' ?></div>
   </div>
 
+  <?!= include(lang === 'ID' ? 'scriptId.js' : 'script.js'); ?>
   <script>
     const LAN = <?!= JSON.stringify(lang) ?>;
     const PERIOD = <?!= JSON.stringify(period || '') ?>;
@@ -140,6 +143,18 @@
       html += '</tbody></table></div></div>';
       $('rvCard').innerHTML = html;
     }
+    $('rvExport').addEventListener('click', function () {
+      const effective = KEYS.length ? KEYS : DEFAULT_FIN_KEYS;
+      const type = KEYS.length === 1 && KEYS[0] === 'tb' ? 'TRIAL_BALANCE'
+        : KEYS.length === 1 && KEYS[0] === 'gl' ? 'GENERAL_LEDGER' : 'FINANCIAL_REPORT';
+      const key = ACTIVE || (DATA && DATA.keys && DATA.keys[0]) || effective[0];
+      window.exportReportToExcel({
+        type: type,
+        period: PERIOD,
+        reportKey: key,
+        reports: effective
+      }, this);
+    });
     load();
   </script>
 </body>

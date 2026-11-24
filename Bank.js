@@ -190,16 +190,23 @@ function readAmounts_(r, c, p) {
   return { out: out, in: inn };
 }
 
-function findAccountByText_(text, coaMap) {
+function coaLookupMap_(coaMap) {
+  const lookup = new Map();
+  coaMap.forEach(account => {
+    [account.name, account.code + ' - ' + account.name].forEach(label => {
+      const key = String(label || '').trim().toLowerCase();
+      if (key && !lookup.has(key)) lookup.set(key, account);
+    });
+  });
+  return lookup;
+}
+
+function findAccountByText_(text, coaMap, lookup) {
   const t = String(text == null ? '' : text).trim();
   if (!t) return null;
   if (coaMap.has(t)) return coaMap.get(t);
-  const low = t.toLowerCase();
-  let found = null;
-  coaMap.forEach(a => {
-    if (!found && (low === a.name.toLowerCase() || low === (a.code + ' - ' + a.name).toLowerCase())) found = a;
-  });
-  return found;
+  const map = lookup || coaLookupMap_(coaMap);
+  return map.get(t.toLowerCase()) || null;
 }
 
 function matchRule_(desc, isIn, rules) {
@@ -260,7 +267,7 @@ function parseBankSheet_(values, p, ctx) {
       (partyCols.customer >= 0 ? clean(r[partyCols.customer]) : '') ||
       (partyCols.supplier >= 0 ? clean(r[partyCols.supplier]) : '');
     if (c.acct >= 0) {
-      acc = findAccountByText_(r[c.acct], ctx.coaMap);
+      acc = findAccountByText_(r[c.acct], ctx.coaMap, ctx.coaLookup);
       if (!acc && clean(r[c.acct])) row.note = 'Account "' + clean(r[c.acct]) + '" is not in the COA.';
     }
     if (!acc) {
@@ -354,6 +361,7 @@ function readImportRules_() {
     }));
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: COA lookup is built once per import context instead of scanning the COA for every statement row.
 function importContext_() {
   const coaMap = getCoaMap_();
   const existing = new Set();
@@ -364,8 +372,8 @@ function importContext_() {
   const settings = readSettings_();
   const suspense = String(settings['Bank Suspense Account'] || '').trim();
   const parties = new Map(readParties_().filter(x => x.active).map(x => [x.name.toLowerCase(), x]));
-  return { coaMap: coaMap, rules: readImportRules_(), existing: existing, suspense: suspense, parties: parties,
-    settings: settings, lockDate: getLockDate_() };
+  return { coaMap: coaMap, coaLookup: coaLookupMap_(coaMap), rules: readImportRules_(), existing: existing,
+    suspense: suspense, parties: parties, settings: settings, lockDate: getLockDate_() };
 }
 
 function allocateIds_(sheet, settings) {
@@ -440,6 +448,7 @@ function previewBankImport(profileName) {
   return { rows: res.rows, skipped: res.skipped, bank: p.account, mode: p.mode };
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: reviewed rows are validated once, then written in large contiguous Journal ranges.
 function importBankRows(payload) {
   const rawRows = Array.isArray(payload.rows) ? payload.rows : [];
   const uploadStart = Date.now();
@@ -451,25 +460,31 @@ function importBankRows(payload) {
   const lock = LockService.getDocumentLock();
   if (!lock.tryLock(LOCK_MS)) throw new Error(tr_('The system is busy. Please try again in a moment.', 'Sistem sedang sibuk. Silakan coba lagi sebentar.'));
   try {
+    const setupStart = Date.now();
     const p = readImportProfile_(payload.profile);
     const status = payload.mode === 'POST' ? STATUS.POSTED : STATUS.DRAFT;
     const ctx = importContext_();
+    console.log('Bank Upload phase setup: ' + (Date.now() - setupStart) + 'ms');
     if (!ctx.coaMap.get(p.account)) throw new Error(`The profile account ${p.account} is not in the COA.`);
     const rows = rawRows.filter(r => !ctx.existing.has(String(r.key)));
     if (!rows.length) throw new Error(tr_('There is nothing new to import.', 'Tidak ada baris baru untuk diimpor.'));
     const sheet = getRequiredSheet_(SHEETS.JOURNAL);
     const now = new Date(), user = getCurrentUser_();
     const batchId = 'BI-' + Utilities.formatDate(now, SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(), 'yyyyMMdd-HHmmss');
+    const buildStart = Date.now();
     const ids = allocateIds_(sheet, ctx.settings);
     const built = buildBankJournals_(rows, p, ctx, { status: status, batchId: batchId, now: now, user: user }, ids.next);
+    console.log('Bank Upload phase build: ' + (Date.now() - buildStart) + 'ms');
     if (!built.sheetRows.length) throw new Error('No row could be imported.\n' + built.errors.slice(0, 10).join('\n'));
 
+    const writeStart = Date.now();
     const start = Math.max(sheet.getLastRow() + 1, 2);
     const needed = start + built.sheetRows.length - 1;
     if (needed > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), needed - sheet.getMaxRows());
     writeJournalRows_(sheet, built.sheetRows, start);
     ids.save();
     SpreadsheetApp.flush();
+    console.log('Bank Upload phase write: ' + (Date.now() - writeStart) + 'ms');
     if (built.missingPartyLines) console.warn('Post: ' + built.missingPartyLines + ' lines posted without Customer / Supplier');
 
     const dates = built.sheetRows.map(r => r[COL.date]).sort((a, b) => a - b);
@@ -479,7 +494,7 @@ function importBankRows(payload) {
       dates[0], dates[dates.length - 1]]]);
     const durationMs = Date.now() - uploadStart;
     console.log('Bank Upload: ' + durationMs + 'ms for ' + rawRows.length + ' rows');
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return { batchId: batchId, imported: built.imported, skipped: rows.length - built.imported,
       status: status, errors: built.errors.slice(0, 15), successCount: built.imported,
       failedCount: rows.length - built.imported, durationMs: durationMs };
@@ -491,9 +506,10 @@ function importBankRows(payload) {
   }
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: large imports use fewer, larger contiguous writes instead of many small writes.
 function writeJournalRows_(sheet, rows, start) {
   const width = JOURNAL_HEADERS.length;
-  const chunk = rows.length > 500 ? 200 : rows.length;
+  const chunk = rows.length > 500 ? 500 : rows.length;
   const written = [];
   try {
     for (let i = 0; i < rows.length; i += chunk) {
@@ -507,6 +523,7 @@ function writeJournalRows_(sheet, rows, start) {
   }
 }
 
+// OPTIMIZED FOR >100K ROWS / SCALABLE: batch summaries read only the columns they need instead of the entire Journal width.
 function getImportBatches() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(IMP.LOG);
   if (!sh || sh.getLastRow() < 2) return [];
@@ -520,18 +537,27 @@ function getImportBatches() {
   const settings = readSettings_();
   const codes = ['ar', 'ap'].map(k => String(settings[mappingKey_(ACCOUNT_MAPPINGS.find(m => m[0] === k))] || '').trim());
   const jsh = getRequiredSheet_(SHEETS.JOURNAL);
-  if (jsh.getLastRow() >= 2) {
-    jsh.getRange(2, 1, jsh.getLastRow() - 1, JOURNAL_HEADERS.length).getValues().forEach((r, i) => {
-      const b = byBatch.get(String(r[COL.batchId]));
-      if (!b || String(r[COL.status]) !== STATUS.DRAFT) return;
-      if (!codes.includes(String(r[COL.accountCode]).trim()) || String(r[COL.partyId] || '').trim()) return;
-      b.missingParty++;
-      const debit = Number(r[COL.debit]) || 0, credit = Number(r[COL.credit]) || 0;
-      const amount = debit > 0 ? debit : credit;
-      const label = debit > 0 ? 'No Supplier' : 'No Customer';
-      const desc = String(r[COL.lineDescription] || r[COL.description] || '');
-      b.missingRows.push('Row ' + (i + 2) + ' - ' + desc + ' Rp ' + fmt_(amount) + ' - ' + label);
-    });
+  const last = jsh.getLastRow();
+  if (last < 2) return batches;
+  const size = last - 1;
+  const batchVals = jsh.getRange(2, COL.batchId + 1, size, 1).getValues();
+  const statusVals = jsh.getRange(2, COL.status + 1, size, 1).getValues();
+  const codeVals = jsh.getRange(2, COL.accountCode + 1, size, 1).getValues();
+  const partyVals = jsh.getRange(2, COL.partyId + 1, size, 1).getValues();
+  const debitVals = jsh.getRange(2, COL.debit + 1, size, 1).getValues();
+  const creditVals = jsh.getRange(2, COL.credit + 1, size, 1).getValues();
+  const lineDescVals = jsh.getRange(2, COL.lineDescription + 1, size, 1).getValues();
+  const descVals = jsh.getRange(2, COL.description + 1, size, 1).getValues();
+  for (let i = 0; i < size; i++) {
+    const b = byBatch.get(String(batchVals[i][0]));
+    if (!b || String(statusVals[i][0]) !== STATUS.DRAFT) continue;
+    if (!codes.includes(String(codeVals[i][0]).trim()) || String(partyVals[i][0] || '').trim()) continue;
+    b.missingParty++;
+    const debit = Number(debitVals[i][0]) || 0, credit = Number(creditVals[i][0]) || 0;
+    const amount = debit > 0 ? debit : credit;
+    const label = debit > 0 ? 'No Supplier' : 'No Customer';
+    const desc = String(lineDescVals[i][0] || descVals[i][0] || '');
+    b.missingRows.push('Row ' + (i + 2) + ' - ' + desc + ' Rp ' + fmt_(amount) + ' - ' + label);
   }
   return batches;
 }
@@ -582,7 +608,7 @@ function postImportBatch(batchId) {
     writeRowGroups_(sheet, found.numbers, found.rows);
     SpreadsheetApp.flush();
     setLogStatus_(batchId, STATUS.POSTED);
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     if (missingPartyLines) console.warn('Post: ' + missingPartyLines + ' lines posted without Customer / Supplier');
     return { message: tr_(Object.keys(byId).length + ' journals of batch ' + batchId + ' posted.', Object.keys(byId).length + ' jurnal dari batch ' + batchId + ' telah diposting.') };
   } finally {
@@ -608,7 +634,7 @@ function deleteImportBatch(batchId) {
     }
     SpreadsheetApp.flush();
     setLogStatus_(batchId, 'DELETED');
-    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {}
+    try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {}
     return { message: tr_('Batch ' + batchId + ' deleted (' + found.rows.length + ' lines).', 'Batch ' + batchId + ' dihapus (' + found.rows.length + ' baris).') };
   } finally {
     lock.releaseLock();

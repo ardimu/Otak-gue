@@ -17,6 +17,9 @@
     .stat strong { display:block; margin-top:6px; font-size:22px; }
     .toolbar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
     .toolbar input { height:36px; min-width:260px; padding:0 10px; border:1px solid var(--rule,#E2E8F0); border-radius:8px; font:inherit; }
+    .toolbar input[type=date] { min-width:140px; }
+    .toolbar .count { color:var(--muted,#64748B); font-size:11px; }
+    #exportExcel { margin-left:auto; }
     .card { background:#fff; border:1px solid var(--rule,#E2E8F0); border-radius:12px; overflow:hidden; }
     .scroll { overflow:auto; max-height:62vh; }
     table { width:100%; border-collapse:collapse; font-size:12px; } th { position:sticky; top:0; background:#F8FAFC; padding:10px 12px; text-align:left; font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--muted,#64748B); border-bottom:1px solid var(--rule,#E2E8F0); }
@@ -25,6 +28,7 @@
     .sm.post { background:var(--accent,#3457D5); color:#fff; border-color:var(--accent,#3457D5); } .sm.del { color:#DC2626; border-color:#FECACA; }
     .empty,.loading { padding:40px 20px; text-align:center; color:var(--muted,#64748B); }
     #status { margin-top:10px; font-size:12px; color:var(--muted,#64748B); min-height:18px; } #status.error { color:#DC2626; }
+    .hidden { display:none!important; }
     .overlay { position:fixed; inset:0; background:rgba(15,23,42,.45); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50; }
     .overlay.hidden { display:none; } .dialog { width:100%; max-width:460px; background:#fff; border-radius:12px; padding:20px; }
     .dialog h2 { margin:0 0 8px; font-size:16px; } .dialog p { margin:0; color:var(--muted,#64748B); white-space:pre-wrap; font-size:12px; }
@@ -40,6 +44,8 @@
     </div>
     <div class="actions">
       <button class="btn" id="refresh"><?= lang === 'ID' ? 'Muat ulang' : 'Refresh' ?></button>
+      <button class="btn" id="checkStatus"><?= lang === 'ID' ? 'Cek Status' : 'Check Status' ?></button>
+      <button class="btn hidden" id="stopPost"><?= lang === 'ID' ? 'Hentikan' : 'Stop' ?></button>
       <button class="btn primary" id="postAll"><?= lang === 'ID' ? 'Posting Semua' : 'Post All' ?></button>
     </div>
   </div>
@@ -49,52 +55,112 @@
     <div class="stat"><span><?= lang === 'ID' ? 'Total Kredit' : 'Total Credit' ?></span><strong id="sCredit">0</strong></div>
     <div class="stat"><span><?= lang === 'ID' ? 'Siap Ditinjau' : 'Needs Review' ?></span><strong id="sReview">0</strong></div>
   </div>
-  <div class="toolbar"><input type="search" id="search" placeholder="<?= lang === 'ID' ? 'Cari Journal ID, keterangan, referensi…' : 'Search Journal ID, description, reference…' ?>"></div>
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="<?= lang === 'ID' ? 'Cari Journal ID, keterangan, referensi…' : 'Search Journal ID, description, reference…' ?>">
+    <input type="date" id="startDate" aria-label="<?= lang === 'ID' ? 'Tanggal mulai' : 'Start date' ?>">
+    <input type="date" id="endDate" aria-label="<?= lang === 'ID' ? 'Tanggal akhir' : 'End date' ?>">
+    <button class="btn" id="prevPage" type="button"><?= lang === 'ID' ? 'Sebelumnya' : 'Previous' ?></button>
+    <span class="count" id="pageInfo"></span>
+    <button class="btn" id="nextPage" type="button"><?= lang === 'ID' ? 'Berikutnya' : 'Next' ?></button>
+    <button class="btn" id="exportExcel" type="button"><?= lang === 'ID' ? 'Ekspor Excel' : 'Export Excel' ?></button>
+  </div>
   <div class="card"><div class="scroll" id="bodyWrap"><div class="loading"><?= lang === 'ID' ? 'Memuat draft…' : 'Loading drafts…' ?></div></div></div>
   <div id="status"></div>
 
   <div id="overlay" class="overlay hidden"><div class="dialog"><h2 id="dlgTitle"></h2><p id="dlgBody"></p><div class="row"><button class="btn" id="dlgCancel">Cancel</button><button class="btn primary" id="dlgOk">Confirm</button></div></div></div>
 
+  <?!= include(lang === 'ID' ? 'scriptId.js' : 'script.js'); ?>
   <script>
     const LANG = <?!= JSON.stringify(lang) ?>;
     let drafts = [], busy = false, pending = null, failedFilter = null;
+    let stats = { total: 0, debit: 0, credit: 0, review: 0 }, page = 1, totalPages = 1;
+    let postToken = '', postTotal = 0, postIds = [], postPosted = [], postFailures = [];
     const $ = id => document.getElementById(id);
     const fmt = n => Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     const esc = v => String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     function setStatus(t,e){ $('status').textContent=t||''; $('status').className=e?'error':''; }
-    function setBusy(v){ busy=v; document.querySelectorAll('button').forEach(b=>b.disabled=v); }
+    function setBusy(v){ busy=v; document.querySelectorAll('button').forEach(b=>{ if(b.id!=='stopPost' && b.id!=='checkStatus') b.disabled=v; }); }
     function ask(title, body, ok, fn, cancel, hideCancel){ $('dlgTitle').textContent=title; $('dlgBody').textContent=body; $('dlgOk').textContent=ok; $('dlgCancel').textContent=cancel||'Cancel'; $('dlgCancel').classList.toggle('hidden',!!hideCancel); pending=fn; $('overlay').classList.remove('hidden'); }
     function closeAsk(){ $('overlay').classList.add('hidden'); pending=null; }
     $('dlgCancel').addEventListener('click', closeAsk);
     $('dlgOk').addEventListener('click', ()=>{ const fn=pending; closeAsk(); if(fn) fn(); });
     function missingPartyBody(count, details){ return count+' transaction'+(count===1?' has':'s have')+' no Customer / Supplier assigned. Continue?\n\n'+(details||[]).join('\n'); }
-    function load(){ setStatus(LANG==='ID'?'Memuat draft…':'Loading drafts…'); google.script.run.withSuccessHandler(list=>{ drafts=Array.isArray(list)?list:[]; renderStats(); render(); setStatus(drafts.length+' draft(s).'); }).withFailureHandler(e=>setStatus(e.message||String(e),true)).getDraftList(); }
-    function renderStats(){ $('sTotal').textContent=drafts.length; $('sDebit').textContent=fmt(drafts.reduce((s,d)=>s+Number(d.debit||0),0)); $('sCredit').textContent=fmt(drafts.reduce((s,d)=>s+Number(d.credit||0),0)); $('sReview').textContent=drafts.filter(d=>Number(d.missingParty||0)>0).length; }
-    function filtered(){ const q=$('search').value.trim().toLowerCase(); return drafts.filter(d=>(!failedFilter||failedFilter.includes(d.journalId)) && [d.journalId,d.description,d.reference].some(v=>String(v||'').toLowerCase().includes(q))); }
+    function requestDraftList(extra){ return Object.assign({
+      search: $('search').value, startDate: $('startDate').value, endDate: $('endDate').value,
+      failedIds: failedFilter || [], page: page, pageSize: 50
+    },extra||{}); }
+    function load(){ setStatus(LANG==='ID'?'Memuat draft…':'Loading drafts…'); google.script.run.withSuccessHandler(res=>{
+      if(!res||!res.success){ setStatus(res&&res.message||'Error',true); return; }
+      drafts=res.drafts||[]; stats=res.stats||stats; page=Number(res.page)||1; totalPages=Number(res.totalPages)||1;
+      renderStats(); render(); setStatus((res.total||0)+(LANG==='ID'?' draf.':' draft(s).'));
+    }).withFailureHandler(e=>setStatus(e.message||String(e),true)).getDraftList(requestDraftList()); }
+    function renderStats(){ $('sTotal').textContent=stats.total; $('sDebit').textContent=fmt(stats.debit); $('sCredit').textContent=fmt(stats.credit); $('sReview').textContent=stats.review; $('pageInfo').textContent=page+' / '+totalPages; $('prevPage').disabled=page<=1; $('nextPage').disabled=page>=totalPages; }
     function render(){
-      const list=filtered();
-      if(!list.length){ $('bodyWrap').innerHTML='<div class="empty">'+(drafts.length?(LANG==='ID'?'Tidak ada draft cocok.':'No draft matches your search.'):(LANG==='ID'?'Belum ada draft.':'No drafts.'))+'</div>'; return; }
+      const list=drafts;
+      renderStats();
+      if(!list.length){ $('bodyWrap').innerHTML='<div class="empty">'+(stats.total?(LANG==='ID'?'Tidak ada draft cocok.':'No draft matches your search.'):(LANG==='ID'?'Belum ada draft.':'No drafts.'))+'</div>'; return; }
       let html='<table><thead><tr><th>Journal ID</th><th>'+ (LANG==='ID'?'Tanggal':'Date') +'</th><th>'+ (LANG==='ID'?'Keterangan':'Description') +'</th><th class="num">'+ (LANG==='ID'?'Baris':'Lines') +'</th><th class="num">Debit</th><th class="num">Credit</th><th>'+ (LANG==='ID'?'Update':'Updated') +'</th><th>'+ (LANG==='ID'?'Aksi':'Actions') +'</th></tr></thead><tbody>';
       list.forEach(d=>{ html+='<tr><td><strong>'+esc(d.journalId)+'</strong></td><td>'+esc(d.date)+'</td><td>'+esc(d.description)+'<div style="color:#64748B;font-size:10.5px">'+esc(d.journalType)+'</div></td><td class="num">'+d.lineCount+'</td><td class="num">'+fmt(d.debit)+'</td><td class="num">'+fmt(d.credit)+'</td><td>'+esc(d.updatedAt)+'</td><td><div class="row-actions"><button class="sm" data-act="edit" data-id="'+esc(d.journalId)+'">Edit</button><button class="sm post" data-act="post" data-id="'+esc(d.journalId)+'">Post</button><button class="sm del" data-act="delete" data-id="'+esc(d.journalId)+'">Delete</button></div></td></tr>'; });
       $('bodyWrap').innerHTML=html+'</tbody></table>';
     }
     function run(label, fn, id){ setBusy(true); setStatus(label); google.script.run.withSuccessHandler(r=>{ setBusy(false); setStatus(r&&r.message?r.message:'Done.'); load(); }).withFailureHandler(e=>{ setBusy(false); setStatus(e.message||String(e),true); })[fn](id); }
     function postAll(){
-      if(busy) return; failedFilter=null; const list=filtered(); if(!list.length){setStatus('No drafts to post'); return;}
-      const ids=list.map(d=>d.journalId); const debit=list.reduce((s,d)=>s+Number(d.debit||0),0); const without=list.filter(d=>Number(d.missingParty||0)>0).length;
-      ask('Post All Drafts?','You are about to post '+ids.length+' drafts. Total Rp '+fmt(debit)+'. '+without+' draft(s) missing Customer/Supplier.\nPosted journals cannot be edited.','Post All',()=>postAllChunks(ids),'Review Again');
+      if(busy) return; failedFilter=null;
+      google.script.run.withSuccessHandler(res=>{
+        if(!res||!res.success||!res.ids||!res.ids.length){ setStatus(LANG==='ID'?'Tidak ada draf untuk diposting.':'No drafts to post',true); return; }
+        const ids=res.ids, s=res.stats||{};
+        ask(LANG==='ID'?'Posting Semua Draf?':'Post All Drafts?',
+          (LANG==='ID'?'Anda akan memposting ':'You are about to post ')+ids.length+(LANG==='ID'?' draf. Total Rp ':' drafts. Total Rp ')+fmt(s.debit)+'. '+(s.review||0)+(LANG==='ID'?' draf tanpa Customer/Supplier.\nJurnal yang diposting tidak bisa diubah.':' draft(s) missing Customer/Supplier.\nPosted journals cannot be edited.'),
+          LANG==='ID'?'Posting Semua':'Post All',()=>beginPostAllSession(ids),LANG==='ID'?'Tinjau Lagi':'Review Again');
+      }).withFailureHandler(e=>setStatus(e.message||String(e),true)).getDraftList(requestDraftList({idsOnly:true}));
     }
-    function postAllChunks(ids){
-      setBusy(true); const total=ids.length; let done=0, posted=[], failures=[]; setStatus('Posting 0 / '+total+'...');
-      const step=()=>{ if(done>=total){ setBusy(false); showPostAllResult(posted,failures); load(); return; }
-        const chunk=ids.slice(done,done+50);
-        google.script.run.withSuccessHandler(r=>{ done+=chunk.length; posted=posted.concat(r.posted||[]); failures=failures.concat(r.failures||[]); setStatus('Posting '+done+' / '+total+'...'); step(); })
-        .withFailureHandler(e=>{ setBusy(false); setStatus(e.message||String(e),true); load(); }).postDraftList(chunk);
-      }; step();
+    function beginPostAllSession(ids){
+      google.script.run.withSuccessHandler(r=>{
+        if(!r||!r.success){ setStatus(r&&r.message||'Error',true); return; }
+        postToken=r.token; postTotal=r.total; postIds=ids.slice(); postPosted=[]; postFailures=[];
+        $('stopPost').classList.remove('hidden'); $('stopPost').disabled=false;
+        setBusy(true); setStatus((LANG==='ID'?'Posting ':'Posting ')+'0/'+postTotal+'...'); postNextChunk();
+      }).withFailureHandler(e=>setStatus(e.message||String(e),true)).beginPostAll(ids);
     }
+    function postNextChunk(){
+      if(!postToken) return;
+      google.script.run.withSuccessHandler(r=>{
+        if(!r||!r.success){ setBusy(false); $('stopPost').classList.add('hidden'); setStatus((r&&r.message||'Error')+' '+(LANG==='ID'?'Jalankan Cek Status.':'Run Check Status.'),true); return; }
+        postPosted=postPosted.concat(r.postedIds||[]); postFailures=postFailures.concat(r.failures||[]);
+        const done=r.progress?r.progress.done:(postPosted.length+postFailures.length);
+        setStatus((LANG==='ID'?'Posting ':'Posting ')+done+'/'+postTotal+'...');
+        if(r.stopped){
+          setBusy(false); $('stopPost').classList.add('hidden');
+          setStatus((LANG==='ID'?'Dihentikan pada ':'Stopped at ')+done+'/'+postTotal+'. '+(LANG==='ID'?'Jalankan Cek Status.':'Run Check Status.'));
+          load(); return;
+        }
+        if(r.completed||done>=postTotal){
+          setBusy(false); $('stopPost').classList.add('hidden'); postToken='';
+          showPostAllResult(postPosted,postFailures); load(); return;
+        }
+        setTimeout(postNextChunk,0);
+      }).withFailureHandler(e=>{
+        setBusy(false); $('stopPost').classList.add('hidden');
+        setStatus((e.message||String(e))+' '+(LANG==='ID'?'Jalankan Cek Status.':'Run Check Status.'),true);
+      }).postAllChunk(postToken,50);
+    }
+    function checkStatus(){
+      const ids=postIds.length?postIds:[];
+      google.script.run.withSuccessHandler(r=>{
+        if(!r||!r.success){ setStatus(r&&r.message||'Error',true); return; }
+        setStatus(LANG==='ID'
+          ? 'Posted: '+r.posted+', Draft: '+r.draft+', Campuran: '+r.mixed+', Tidak ditemukan: '+r.missing
+          : 'Posted: '+r.posted+', Draft: '+r.draft+', Mixed: '+r.mixed+', Missing: '+r.missing);
+      }).withFailureHandler(e=>setStatus(e.message||String(e),true)).checkPostStatus(ids);
+    }
+    $('stopPost').addEventListener('click', function(){
+      if(!postToken||this.disabled) return;
+      this.disabled=true; setStatus(LANG==='ID'?'Menghentikan...':'Stopping...');
+      google.script.run.withSuccessHandler(()=>setStatus(LANG==='ID'?'Berhenti setelah batch saat ini.':'Stopping after the current batch.')).withFailureHandler(e=>{ this.disabled=false; setStatus(e.message||String(e),true); }).stopPostAll(postToken);
+    });
     function showPostAllResult(posted, failures){
-      if(!failures.length){ ask('Post All Complete','All '+posted.length+' drafts posted successfully.','Close',null,'Close',true); return; }
-      ask('Post All Complete','Posted: '+posted.length+', Failed: '+failures.length+'\n\n'+failures.map(f=>f.journalNo+' - '+f.reason).join('\n'),'View Failed',()=>{ failedFilter=failures.map(f=>f.journalNo); $('search').value=''; render(); setStatus('Showing '+failedFilter.length+' failed drafts.'); },'Close');
+      if(!failures.length){ ask(LANG==='ID'?'Posting Selesai':'Post All Complete',(LANG==='ID'?'Semua ':'All ')+posted.length+(LANG==='ID'?' draf berhasil diposting.':' drafts posted successfully.'),LANG==='ID'?'Tutup':'Close',null,LANG==='ID'?'Tutup':'Close',true); return; }
+      ask(LANG==='ID'?'Posting Selesai':'Post All Complete',(LANG==='ID'?'Diposting: ':'Posted: ')+posted.length+(LANG==='ID'?', Gagal: ':', Failed: ')+failures.length+'\n\n'+failures.map(f=>f.journalNo+' - '+f.reason).join('\n'),LANG==='ID'?'Lihat Gagal':'View Failed',()=>{ failedFilter=failures.map(f=>f.journalNo); $('search').value=''; page=1; load(); },LANG==='ID'?'Tutup':'Close');
     }
     $('bodyWrap').addEventListener('click', ev=>{
       const btn=ev.target.closest('button[data-act]'); if(!btn||busy) return; const id=btn.dataset.id;
@@ -106,7 +172,22 @@
       else if(btn.dataset.act==='post'){ const d=drafts.find(x=>x.journalId===id)||{}; const go=()=>run('Posting...','postDraftFromManagement',id); if(d.missingParty) ask('Missing Customer / Supplier', missingPartyBody(d.missingParty,d.missingRows),'Post Anyway',go,'Review Again'); else go(); }
       else if(btn.dataset.act==='delete'){ ask('Delete '+id+'?','This draft will be removed permanently.','Delete draft',()=>run('Deleting...','deleteDraft',id)); }
     });
-    $('postAll').addEventListener('click', postAll); $('search').addEventListener('input',()=>{ failedFilter=null; render(); }); $('refresh').addEventListener('click',()=>{ failedFilter=null; load(); }); load();
+    function reload(){ failedFilter=null; page=1; load(); }
+    $('postAll').addEventListener('click', postAll); $('checkStatus').addEventListener('click', checkStatus); $('search').addEventListener('input',reload);
+    $('startDate').addEventListener('change',reload);
+    $('endDate').addEventListener('change',reload);
+    $('prevPage').addEventListener('click',()=>{ if(page>1){ page--; load(); } });
+    $('nextPage').addEventListener('click',()=>{ if(page<totalPages){ page++; load(); } });
+    $('exportExcel').addEventListener('click', function(){
+      window.exportReportToExcel({
+        type: 'DRAFT_MANAGEMENT',
+        search: $('search').value,
+        startDate: $('startDate').value,
+        endDate: $('endDate').value,
+        failedIds: failedFilter || []
+      }, this);
+    });
+    $('refresh').addEventListener('click',reload); load();
   </script>
 </body>
 </html>

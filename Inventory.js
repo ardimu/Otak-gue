@@ -241,7 +241,7 @@ function processStockMovements(options) {
         ' baris memiliki kesalahan. Baca kolom M pada lembar Stock Movements, perbaiki, lalu proses kembali.') : tr_('No errors.', 'Tidak ada kesalahan.')) +
       (r.created ? tr_('\n\nReview the drafts in Draft Management, or post the whole batch in Bank & Petty Cash Import.',
         '\n\nTinjau draf di Kelola Draf, atau posting seluruh batch di Impor Bank & Kas Kecil.') : '');
-    if (r.created) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_(); } catch (e) {} }
+    if (r.created) { try { if (typeof webInvalidateCache_ === 'function') webInvalidateCache_('journals'); } catch (e) {} }
     if (web) return { success: true, result: r, message: message };
   const ui = SpreadsheetApp.getUi();
   ui.alert(tr_('Stock movements processed', 'Pergerakan persediaan diproses'), message, ui.ButtonSet.OK);

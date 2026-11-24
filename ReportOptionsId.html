@@ -29,8 +29,8 @@
 </style>
 </head>
 <body>
-  <h1>Buat laporan bulanan</h1>
-  <p class="sub">Pilih bulan dan laporan yang ingin dibuat. Hanya lembar yang dipilih yang ditulis dan ditampilkan.</p>
+  <h1><?= typeof exportMode !== 'undefined' && exportMode ? 'Ekspor Laporan ke Excel' : 'Buat laporan bulanan' ?></h1>
+  <p class="sub"><?= typeof exportMode !== 'undefined' && exportMode ? 'Pilih bulan dan laporan yang ingin diunduh sebagai file Excel.' : 'Pilih bulan dan laporan yang ingin dibuat. Hanya lembar yang dipilih yang ditulis dan ditampilkan.' ?></p>
 
   <section>
     <label for="period">Bulan</label>
@@ -57,14 +57,17 @@
 
     <div id="message" role="status" aria-live="polite"></div>
     <div class="actions">
+      <button type="button" class="<?= typeof exportMode !== 'undefined' && exportMode ? 'primary' : 'quiet' ?>" id="btnExport">Ekspor Excel</button>
       <button type="button" class="quiet" id="btnCancel">Batal</button>
-      <button type="button" class="primary" id="btnRun">Buat Laporan</button>
+      <button type="button" class="primary" id="btnRun"<?= typeof exportMode !== 'undefined' && exportMode ? ' hidden' : '' ?>>Buat Laporan</button>
     </div>
   </section>
 
+  <?!= include('scriptId.js'); ?>
   <script>
     const initial = <?!= JSON.stringify(initial) ?>;
     const WEB_MODE = <?!= JSON.stringify(typeof webMode === 'undefined' ? false : webMode) ?>;
+    const EXPORT_MODE = <?!= JSON.stringify(typeof exportMode === 'undefined' ? false : exportMode) ?>;
     const $ = id => document.getElementById(id);
     const boxes = () => Array.from(document.querySelectorAll('.report-check'));
 
@@ -117,10 +120,37 @@
         .generateReportSelection({ period: period, mode: mode, reports: reports, web: false });
     });
 
+    const ALL_REPORT_KEYS = ['tb', 'gl', 'is', 'bs', 'eq', 'cf'];
+
+    $('btnExport').addEventListener('click', async () => {
+      say('');
+      const period = $('period').value;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { say('Pilih bulan terlebih dahulu.'); return; }
+      if (!window.exportReportToExcel) { say('Pembantu ekspor Excel belum termuat.'); return; }
+      const mode = $('mode').value;
+      const reports = boxes().filter(box => box.checked).map(box => box.value);
+      if (mode === 'custom' && !reports.length) { say('Centang minimal satu laporan.'); return; }
+      const keys = mode === 'custom' ? reports : ALL_REPORT_KEYS;
+      const original = $('btnExport').textContent;
+      $('btnExport').disabled = true;
+      try {
+        for (const key of keys) {
+          const result = await window.exportReportToExcel({ type: 'FINANCIAL_REPORT', period: period, reportKey: key }, null, {
+            onError: message => say('Ekspor gagal: ' + message)
+          });
+          if (!result) break;
+        }
+      } finally {
+        $('btnExport').disabled = false;
+        $('btnExport').textContent = original;
+      }
+    });
+
     $('period').value = initial.period;
     $('mode').value = initial.mode;
     boxes().forEach(box => { box.checked = initial.reports.indexOf(box.value) >= 0; });
     applyMode();
+    if (EXPORT_MODE) $('btnExport').focus();
   </script>
 </body>
 </html>

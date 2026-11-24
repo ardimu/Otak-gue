@@ -100,6 +100,7 @@ function agingReports_(parties, side, asOf, meta) {
 
 function generateAging(asOf, options) {
   const web = !!(options && options.web);
+  const dataOnly = !!(options && options.dataOnly);
   const ui = web ? null : SpreadsheetApp.getUi();
   const today = isoDate_(new Date());
   let raw = asOf;
@@ -127,15 +128,19 @@ function generateAging(asOf, options) {
   const posted = loadPostedForReports_();
   const meta = { company: s['Company Name'] || '' };
   const out = [];
+  const reports = [];
   [['AR', 'ar', 'AR'], ['AP', 'ap', 'AP']].forEach(d => {
     const lines = posted.filter(l => l.code === code(d[1]));
     const rep = agingReports_(agingBuild_(lines, d[0], asOfDate), d[0], asOfDate, meta);
+    reports.push({ side: d[0], report: rep });
+    if (dataOnly) return;
     writeReport_(d[2] + ' Aging', rep.summary);
     writeReport_(d[2] + ' Open Items', rep.detail);
     out.push((d[0] === 'AR' ? tr_('Receivables', 'Piutang') : tr_('Payables', 'Utang')) + tr_(': open Rp ', ': saldo belum lunas Rp ') + fmt_(rep.totals.open) +
       tr_(', overdue Rp ', ', telah jatuh tempo Rp ') + fmt_(rep.totals.overdue) +
       (rep.totals.unapplied ? tr_(', unapplied payments Rp ', ', pembayaran belum dialokasikan Rp ') + fmt_(rep.totals.unapplied) : ''));
   });
+  if (dataOnly) return { success: true, asOf: isoDate_(asOfDate), reports: reports };
   const sheets = 'AR Aging, AR Open Items, AP Aging, AP Open Items';
   const message = out.join('\n') + tr_('\n\nSheets: ', '\n\nLembar: ') + sheets + '.';
   if (web) return { success: true, message: message, sheets: sheets };

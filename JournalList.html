@@ -24,6 +24,7 @@
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
     .toolbar input,.toolbar select { height:36px; padding:0 10px; border:1px solid var(--rule,#E2E8F0); border-radius:8px; background:#fff; font:inherit; font-size:12px; }
     .toolbar input { min-width:260px; }
+    .toolbar input[type=date] { min-width:140px; }
     .count { margin-left:auto; color:var(--muted,#64748B); font-size:11px; }
     .card { background:#fff; border:1px solid var(--rule,#E2E8F0); border-radius:12px; overflow:hidden; box-shadow:0 8px 24px rgba(15,23,42,.04); }
     .scroll { overflow:auto; max-height:62vh; }
@@ -69,38 +70,38 @@
   <div class="toolbar">
     <input type="search" id="q" placeholder="<?= lang === 'ID' ? 'Cari ID, keterangan, referensi, pihak…' : 'Search ID, description, reference, party…' ?>">
     <select id="status"><option value="ALL"><?= lang === 'ID' ? 'Semua status' : 'All statuses' ?></option><option value="POSTED">Posted</option><option value="DRAFT">Draft</option></select>
+    <input type="date" id="startDate" aria-label="<?= lang === 'ID' ? 'Tanggal mulai' : 'Start date' ?>">
+    <input type="date" id="endDate" aria-label="<?= lang === 'ID' ? 'Tanggal akhir' : 'End date' ?>">
     <span class="count" id="count"></span>
+    <button class="btn" id="prevPage" type="button"><?= lang === 'ID' ? 'Sebelumnya' : 'Previous' ?></button>
+    <span class="count" id="pageInfo"></span>
+    <button class="btn" id="nextPage" type="button"><?= lang === 'ID' ? 'Berikutnya' : 'Next' ?></button>
+    <button class="btn" id="exportExcel" type="button"><?= lang === 'ID' ? 'Ekspor Excel' : 'Export Excel' ?></button>
   </div>
 
   <div class="card"><div class="scroll" id="body"><div class="loading"><?= lang === 'ID' ? 'Memuat jurnal…' : 'Loading journals…' ?></div></div></div>
 
+  <?!= include(lang === 'ID' ? 'scriptId.js' : 'script.js'); ?>
   <script>
     const LANG = <?!= JSON.stringify(lang) ?>;
     const HIGHLIGHT = <?!= JSON.stringify(String(typeof params === 'undefined' ? '' : (params.highlight || ''))) ?>;
     const $ = id => document.getElementById(id);
-    let items = [];
+    let items = [], stats = { total: 0, posted: 0, draft: 0, debit: 0 }, total = 0, page = 1, totalPages = 1;
     const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     const fmt = n => (Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     function renderStats() {
-      const posted = items.filter(i=>i.status==='POSTED');
-      const draft = items.filter(i=>i.status==='DRAFT');
-      $('sTotal').textContent = items.length;
-      $('sPosted').textContent = posted.length;
-      $('sDraft').textContent = draft.length;
-      $('sValue').textContent = fmt(items.reduce((s,i)=>s+(Number(i.debit)||0),0));
-    }
-    function visible() {
-      const term = $('q').value.trim().toLowerCase();
-      const st = $('status').value;
-      return items.filter(i => {
-        if (st !== 'ALL' && i.status !== st) return false;
-        if (!term) return true;
-        return [i.journalId,i.journalType,i.description,i.reference,i.party].some(v=>String(v||'').toLowerCase().includes(term));
-      });
+      $('sTotal').textContent = stats.total;
+      $('sPosted').textContent = stats.posted;
+      $('sDraft').textContent = stats.draft;
+      $('sValue').textContent = fmt(stats.debit);
+      $('count').textContent = items.length + ' / ' + total;
+      $('pageInfo').textContent = page + ' / ' + totalPages;
+      $('prevPage').disabled = page <= 1;
+      $('nextPage').disabled = page >= totalPages;
     }
     function render() {
-      const rows = visible();
-      $('count').textContent = rows.length + ' / ' + items.length;
+      const rows = items;
+      renderStats();
       if (!rows.length) { $('body').innerHTML = '<div class="empty">' + (LANG==='ID'?'Tidak ada jurnal yang cocok.':'No matching journals.') + '</div>'; return; }
       let html = '<table><thead><tr><th>'+(LANG==='ID'?'ID & Jenis':'ID & Type')+'</th><th>'+(LANG==='ID'?'Tanggal':'Date')+'</th><th>'+(LANG==='ID'?'Keterangan':'Description')+'</th><th>'+(LANG==='ID'?'Pihak':'Party')+'</th><th>Status</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">'+(LANG==='ID'?'Baris':'Lines')+'</th></tr></thead><tbody>';
       rows.forEach(i => {
@@ -118,11 +119,32 @@
       $('body').innerHTML = '<div class="loading">'+(LANG==='ID'?'Memuat jurnal…':'Loading journals…')+'</div>';
       google.script.run.withSuccessHandler(res => {
         if (!res || !res.success) { $('body').innerHTML = '<div class="empty">'+esc(res&&res.message||'Error')+'</div>'; return; }
-        items = res.journals || []; renderStats(); render();
-      }).withFailureHandler(err => { $('body').innerHTML = '<div class="empty">'+esc(err&&err.message||err)+'</div>'; }).webListJournals({status:'ALL',limit:500});
+        items = res.journals || []; stats = res.stats || stats; total = Number(res.total) || 0;
+        page = Number(res.page) || 1; totalPages = Number(res.totalPages) || 1;
+        render();
+      }).withFailureHandler(err => { $('body').innerHTML = '<div class="empty">'+esc(err&&err.message||err)+'</div>'; })
+        .webListJournals({
+          status: $('status').value, search: $('q').value,
+          startDate: $('startDate').value, endDate: $('endDate').value,
+          page: page, pageSize: 50
+        });
     }
-    $('q').addEventListener('input', render);
-    $('status').addEventListener('change', render);
+    function reload() { page = 1; load(); }
+    $('q').addEventListener('input', reload);
+    $('status').addEventListener('change', reload);
+    $('startDate').addEventListener('change', reload);
+    $('endDate').addEventListener('change', reload);
+    $('prevPage').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+    $('nextPage').addEventListener('click', () => { if (page < totalPages) { page++; load(); } });
+    $('exportExcel').addEventListener('click', function () {
+      window.exportReportToExcel({
+        type: 'JOURNAL_LIST',
+        status: $('status').value,
+        search: $('q').value,
+        startDate: $('startDate').value,
+        endDate: $('endDate').value
+      }, this);
+    });
     $('refreshBtn').addEventListener('click', load);
     document.addEventListener('click', function(e){
       const a = e.target.closest('a[data-modal]');

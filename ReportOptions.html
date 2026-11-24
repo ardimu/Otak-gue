@@ -31,8 +31,8 @@
 <body>
   <div style="margin-bottom:18px">
     <div style="color:#3457D5;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase">Reports</div>
-    <h1 style="margin:6px 0 4px;font-size:24px">Generate Monthly Reports Dashboard</h1>
-    <p class="sub">Choose the month and reports to calculate. Web preview opens directly in Financial Reports.</p>
+    <h1 style="margin:6px 0 4px;font-size:24px"><?= typeof exportMode !== 'undefined' && exportMode ? 'Export Reports to Excel' : 'Generate Monthly Reports Dashboard' ?></h1>
+    <p class="sub"><?= typeof exportMode !== 'undefined' && exportMode ? 'Choose the month and reports to download as Excel files.' : 'Choose the month and reports to calculate. Web preview opens directly in Financial Reports.' ?></p>
   </div>
 
   <section>
@@ -60,14 +60,17 @@
 
     <div id="message" role="status" aria-live="polite"></div>
     <div class="actions">
+      <button type="button" class="<?= typeof exportMode !== 'undefined' && exportMode ? 'primary' : 'quiet' ?>" id="btnExport">Export Excel</button>
       <button type="button" class="quiet" id="btnCancel">Cancel</button>
-      <button type="button" class="primary" id="btnRun">Generate</button>
+      <button type="button" class="primary" id="btnRun"<?= typeof exportMode !== 'undefined' && exportMode ? ' hidden' : '' ?>>Generate</button>
     </div>
   </section>
 
+  <?!= include('script.js'); ?>
   <script>
     const initial = <?!= JSON.stringify(initial) ?>;
     const WEB_MODE = <?!= JSON.stringify(typeof webMode === 'undefined' ? false : webMode) ?>;
+    const EXPORT_MODE = <?!= JSON.stringify(typeof exportMode === 'undefined' ? false : exportMode) ?>;
     const $ = id => document.getElementById(id);
     const boxes = () => Array.from(document.querySelectorAll('.report-check'));
 
@@ -120,10 +123,37 @@
         .generateReportSelection({ period: period, mode: mode, reports: reports, web: false });
     });
 
+    const ALL_REPORT_KEYS = ['tb', 'gl', 'is', 'bs', 'eq', 'cf'];
+
+    $('btnExport').addEventListener('click', async () => {
+      say('');
+      const period = $('period').value;
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) { say('Choose the month first.'); return; }
+      if (!window.exportReportToExcel) { say('Excel export helper is not loaded.'); return; }
+      const mode = $('mode').value;
+      const reports = boxes().filter(box => box.checked).map(box => box.value);
+      if (mode === 'custom' && !reports.length) { say('Choose at least one report.'); return; }
+      const keys = mode === 'custom' ? reports : ALL_REPORT_KEYS;
+      const original = $('btnExport').textContent;
+      $('btnExport').disabled = true;
+      try {
+        for (const key of keys) {
+          const result = await window.exportReportToExcel({ type: 'FINANCIAL_REPORT', period: period, reportKey: key }, null, {
+            onError: message => say('Export failed: ' + message)
+          });
+          if (!result) break;
+        }
+      } finally {
+        $('btnExport').disabled = false;
+        $('btnExport').textContent = original;
+      }
+    });
+
     $('period').value = initial.period;
     $('mode').value = initial.mode;
     boxes().forEach(box => { box.checked = initial.reports.indexOf(box.value) >= 0; });
     applyMode();
+    if (EXPORT_MODE) $('btnExport').focus();
   </script>
 </body>
 </html>

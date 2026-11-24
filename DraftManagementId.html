@@ -17,11 +17,17 @@
   }
   h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
   .sub { color: var(--muted); margin-bottom: 14px; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+  .toolbar .count { color: var(--muted); font-size: 11px; }
   input[type=search] {
     flex: 1; padding: 9px 11px; border: 1px solid var(--rule); border-radius: 3px;
     font: inherit; background: var(--sheet);
   }
+  input[type=date] {
+    padding: 9px 11px; border: 1px solid var(--rule); border-radius: 3px;
+    font: inherit; background: var(--sheet); width: auto;
+  }
+  #exportExcel { margin-left: auto; }
   input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button {
     border: 1px solid transparent; border-radius: 3px; padding: 7px 12px;
@@ -66,8 +72,16 @@
 
 <div class="toolbar">
   <input type="search" id="search" placeholder="Cari berdasarkan ID Jurnal, keterangan, atau referensi">
+  <input type="date" id="startDate" aria-label="Tanggal mulai">
+  <input type="date" id="endDate" aria-label="Tanggal akhir">
+  <button class="ghost" id="prevPage">Sebelumnya</button>
+  <span class="count" id="pageInfo"></span>
+  <button class="ghost" id="nextPage">Berikutnya</button>
   <button class="ghost" id="refresh">Muat Ulang</button>
+  <button class="ghost" id="checkStatus">Cek Status</button>
+  <button class="ghost hidden" id="stopPost">Hentikan</button>
   <button class="post" id="postAll">Posting Semua</button>
+  <button class="edit" id="exportExcel" type="button">Ekspor Excel</button>
 </div>
 
 <div class="wrap">
@@ -94,11 +108,20 @@
   </div>
 </div>
 
+<?!= include('scriptId.js'); ?>
 <script>
   let drafts = [];
   let busy = false;
   let pending = null;
   let failedFilter = null;
+  let stats = { total: 0, debit: 0, credit: 0, review: 0 };
+  let page = 1;
+  let totalPages = 1;
+  let postToken = '';
+  let postTotal = 0;
+  let postIds = [];
+  let postPosted = [];
+  let postFailures = [];
   const $ = id => document.getElementById(id);
 
   const fmt = n => Number(n || 0).toLocaleString('id-ID');
@@ -112,33 +135,42 @@
 
   function setBusy(value) {
     busy = value;
-    document.querySelectorAll('button').forEach(b => { b.disabled = value; });
+    document.querySelectorAll('button').forEach(b => {
+      if (b.id !== 'stopPost' && b.id !== 'checkStatus') b.disabled = value;
+    });
+  }
+
+  function requestDraftList(extra) {
+    return Object.assign({
+      search: $('search').value, startDate: $('startDate').value, endDate: $('endDate').value,
+      failedIds: failedFilter || [], page: page, pageSize: 50
+    }, extra || {});
   }
 
   function load() {
     setStatus('Memuat draf...');
     google.script.run
-      .withSuccessHandler(list => {
-        drafts = Array.isArray(list) ? list : [];
+      .withSuccessHandler(res => {
+        if (!res || !res.success) { setStatus(res && res.message || 'Gagal memuat draf.', true); return; }
+        drafts = res.drafts || [];
+        stats = res.stats || stats;
+        page = Number(res.page) || 1;
+        totalPages = Number(res.totalPages) || 1;
         render();
-        setStatus(drafts.length === 1 ? '1 draf.' : drafts.length + ' draf.');
+        setStatus((res.total || 0) + ' draf.');
       })
       .withFailureHandler(e => setStatus('Gagal memuat draf: ' + e.message, true))
-      .getDraftList();
-  }
-
-  function filteredDrafts() {
-    const q = $('search').value.trim().toLowerCase();
-    return drafts.filter(d =>
-      (!failedFilter || failedFilter.includes(d.journalId)) &&
-      [d.journalId, d.description, d.reference].some(v => String(v || '').toLowerCase().includes(q)));
+      .getDraftList(requestDraftList());
   }
 
   function render() {
-    const list = filteredDrafts();
+    const list = drafts;
+    $('pageInfo').textContent = page + ' / ' + totalPages;
+    $('prevPage').disabled = page <= 1;
+    $('nextPage').disabled = page >= totalPages;
     if (!list.length) {
       $('body').innerHTML = '<tr><td colspan="8" class="empty">' +
-        (drafts.length ? 'Tidak ada draf yang sesuai dengan pencarian.' : 'Belum ada draf. Simpan jurnal sebagai Draf untuk melihatnya di sini.') +
+        (stats.total ? 'Tidak ada draf yang sesuai dengan pencarian.' : 'Belum ada draf. Simpan jurnal sebagai Draf untuk melihatnya di sini.') +
         '</td></tr>';
       return;
     }
@@ -188,55 +220,97 @@
   function postAll() {
     if (busy) return;
     failedFilter = null;
-    const list = filteredDrafts();
-    if (!list.length) { setStatus('Tidak ada draf untuk diposting'); return; }
-    const ids = list.map(d => d.journalId);
-    const total = ids.length;
-    const debit = list.reduce((sum, d) => sum + Number(d.debit || 0), 0);
-    const without = list.filter(d => Number(d.missingParty || 0) > 0).length;
-    const body = 'Anda akan memposting ' + total + ' jurnal draf ke Buku Besar. ' +
-      'Harap pastikan jurnal-jurnal tersebut telah ditinjau. Jurnal yang telah diposting tidak dapat diubah dan akan memengaruhi saldo Anda.' +
-      '\n\n' + total + ' jurnal | Total Rp ' + fmt(debit) + ' | ' + without + ' jurnal tanpa Pelanggan / Pemasok';
-    ask('Posting Semua Draf?', body, 'Posting Semua', () => postAllChunks(ids), 'Periksa Kembali');
+    google.script.run
+      .withSuccessHandler(res => {
+        if (!res || !res.success || !res.ids || !res.ids.length) { setStatus('Tidak ada draf untuk diposting', true); return; }
+        const ids = res.ids, s = res.stats || {}, total = ids.length;
+        const body = 'Anda akan memposting ' + total + ' jurnal draf ke Buku Besar. ' +
+          'Harap pastikan jurnal-jurnal tersebut telah ditinjau. Jurnal yang telah diposting tidak dapat diubah dan akan memengaruhi saldo Anda.' +
+          '\n\n' + total + ' jurnal | Total Rp ' + fmt(s.debit) + ' | ' + (s.review || 0) + ' jurnal tanpa Pelanggan / Pemasok';
+        ask('Posting Semua Draf?', body, 'Posting Semua', () => beginPostAllSession(ids), 'Periksa Kembali');
+      })
+      .withFailureHandler(e => setStatus('Gagal memuat draf: ' + e.message, true))
+      .getDraftList(requestDraftList({ idsOnly: true }));
   }
 
-  function postAllChunks(ids) {
-    setBusy(true);
-    const total = ids.length;
-    let done = 0, shown = 0, posted = [], failures = [], missing = 0;
-    const ticker = setInterval(() => {
-      if (shown < total - 1) { shown++; setStatus('Posting ' + shown + ' / ' + total + '...'); }
-    }, 120);
-    setStatus('Posting 0 / ' + total + '...');
-    const step = () => {
-      if (done >= total) {
-        clearInterval(ticker);
-        setBusy(false);
-        showPostAllResult(posted, failures);
-        load();
-        return;
-      }
-      const chunk = ids.slice(done, done + 50);
-      google.script.run
-        .withSuccessHandler(r => {
-          done += chunk.length;
-          shown = Math.max(shown, done);
-          posted = posted.concat(r.posted || []);
-          failures = failures.concat(r.failures || []);
-          missing += Number(r.missingPartyLines || 0);
-          setStatus('Posting ' + done + ' / ' + total + '...');
-          step();
-        })
-        .withFailureHandler(e => {
-          clearInterval(ticker);
-          setBusy(false);
-          setStatus(e.message || String(e), true);
-          load();
-        })
-        .postDraftList(chunk);
-    };
-    step();
+  function beginPostAllSession(ids) {
+    google.script.run
+      .withSuccessHandler(r => {
+        if (!r || !r.success) { setStatus(r && r.message || 'Gagal memulai posting.', true); return; }
+        postToken = r.token;
+        postTotal = r.total;
+        postIds = ids.slice();
+        postPosted = [];
+        postFailures = [];
+        $('stopPost').classList.remove('hidden');
+        $('stopPost').disabled = false;
+        setBusy(true);
+        setStatus('Posting 0/' + postTotal + '...');
+        postNextChunk();
+      })
+      .withFailureHandler(e => setStatus(e.message || String(e), true))
+      .beginPostAll(ids);
   }
+
+  function postNextChunk() {
+    if (!postToken) return;
+    google.script.run
+      .withSuccessHandler(r => {
+        if (!r || !r.success) {
+          setBusy(false);
+          $('stopPost').classList.add('hidden');
+          setStatus((r && r.message || 'Gagal memposting.') + ' Jalankan Cek Status.', true);
+          return;
+        }
+        postPosted = postPosted.concat(r.postedIds || []);
+        postFailures = postFailures.concat(r.failures || []);
+        const done = r.progress ? r.progress.done : (postPosted.length + postFailures.length);
+        setStatus('Posting ' + done + '/' + postTotal + '...');
+        if (r.stopped) {
+          setBusy(false);
+          $('stopPost').classList.add('hidden');
+          setStatus('Dihentikan pada ' + done + '/' + postTotal + '. Jalankan Cek Status.');
+          load();
+          return;
+        }
+        if (r.completed || done >= postTotal) {
+          setBusy(false);
+          $('stopPost').classList.add('hidden');
+          postToken = '';
+          showPostAllResult(postPosted, postFailures);
+          load();
+          return;
+        }
+        setTimeout(postNextChunk, 0);
+      })
+      .withFailureHandler(e => {
+        setBusy(false);
+        $('stopPost').classList.add('hidden');
+        setStatus((e.message || String(e)) + ' Jalankan Cek Status.', true);
+      })
+      .postAllChunk(postToken, 50);
+  }
+
+  function checkStatus() {
+    const ids = postIds.length ? postIds : [];
+    google.script.run
+      .withSuccessHandler(r => {
+        if (!r || !r.success) { setStatus(r && r.message || 'Gagal mengecek status.', true); return; }
+        setStatus('Diposting: ' + r.posted + ', Draft: ' + r.draft + ', Campuran: ' + r.mixed + ', Tidak ditemukan: ' + r.missing);
+      })
+      .withFailureHandler(e => setStatus(e.message || String(e), true))
+      .checkPostStatus(ids);
+  }
+
+  $('stopPost').addEventListener('click', function () {
+    if (!postToken || this.disabled) return;
+    this.disabled = true;
+    setStatus('Menghentikan...');
+    google.script.run
+      .withSuccessHandler(() => setStatus('Berhenti setelah batch saat ini.'))
+      .withFailureHandler(e => { this.disabled = false; setStatus(e.message || String(e), true); })
+      .stopPostAll(postToken);
+  });
 
   function showPostAllResult(posted, failures) {
     if (!failures.length) {
@@ -248,8 +322,8 @@
     ask('Posting Semua Selesai', body, 'Lihat yang Gagal', () => {
       failedFilter = failures.map(f => f.journalNo);
       $('search').value = '';
-      render();
-      setStatus('Menampilkan ' + failedFilter.length + ' draf yang gagal.');
+      page = 1;
+      load();
     }, 'Tutup');
   }
 
@@ -275,9 +349,24 @@
     }
   });
 
+  function reload() { failedFilter = null; page = 1; load(); }
   $('postAll').addEventListener('click', postAll);
-  $('search').addEventListener('input', () => { failedFilter = null; render(); });
-  $('refresh').addEventListener('click', () => { failedFilter = null; load(); });
+  $('checkStatus').addEventListener('click', checkStatus);
+  $('search').addEventListener('input', reload);
+  $('startDate').addEventListener('change', reload);
+  $('endDate').addEventListener('change', reload);
+  $('prevPage').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+  $('nextPage').addEventListener('click', () => { if (page < totalPages) { page++; load(); } });
+  $('exportExcel').addEventListener('click', function () {
+    window.exportReportToExcel({
+      type: 'DRAFT_MANAGEMENT',
+      search: $('search').value,
+      startDate: $('startDate').value,
+      endDate: $('endDate').value,
+      failedIds: failedFilter || []
+    }, this);
+  });
+  $('refresh').addEventListener('click', reload);
   load();
 </script>
 </body>

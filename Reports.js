@@ -370,6 +370,17 @@ function generateReports() {
   showReportDialog_();
 }
 
+function exportReports() {
+  const indonesian = getLanguage() === 'ID';
+  const t = HtmlService.createTemplateFromFile(indonesian ? 'ReportOptionsId' : 'ReportOptions');
+  t.initial = getReportSelection_();
+  t.exportMode = true;
+  SpreadsheetApp.getUi().showModalDialog(
+    t.evaluate().setWidth(500).setHeight(540),
+    indonesian ? 'Ekspor Laporan ke Excel' : 'Export Reports to Excel'
+  );
+}
+
 function generateReportSelection(payload) {
   const p = payload || {};
   const period = String(p.period || '').trim();
@@ -407,6 +418,32 @@ function loadPostedForReports_() {
     const period = Number(r[COL.period]) || (date.getFullYear() * 100 + date.getMonth() + 1);
     out.push({
       period: period, date: date, id: String(r[COL.id]), line: Number(r[COL.line]) || 0, type: String(r[COL.type]),
+      ref: String(r[COL.reference]), desc: String(r[COL.description]), ldesc: String(r[COL.lineDescription]),
+      party: String(r[COL.party]), partyId: String(r[COL.partyId] || ''), due: r[COL.dueDate] instanceof Date ? r[COL.dueDate] : null,
+      code: String(r[COL.accountCode]).trim(),
+      debit: Number(r[COL.debit]) || 0, credit: Number(r[COL.credit]) || 0
+    });
+  });
+  return out;
+}
+
+// OPTIMIZED FOR >100K ROWS / SCALABLE: web reports combine cached prior-period totals with only the selected period's journal lines.
+function loadPostedForWebReports_(period) {
+  const p = Number(period) || 0;
+  const out = [];
+  webGetReportSummary_().forEach(row => {
+    if (row.period >= p || (!row.debit && !row.credit)) return;
+    const year = Math.floor(row.period / 100), month = row.period % 100;
+    out.push({
+      period: row.period, date: new Date(year, month - 1, 1, 12), id: 'SUMMARY', line: 0, type: row.type,
+      ref: '', desc: '', ldesc: '', party: '', partyId: '', due: null,
+      code: row.code, debit: row.debit, credit: row.credit
+    });
+  });
+  readJournalRows_({ status: STATUS.POSTED, fromPeriod: p, toPeriod: p }).forEach(r => {
+    const date = r[COL.date] instanceof Date ? r[COL.date] : new Date(r[COL.date]);
+    out.push({
+      period: journalRowPeriod_(r), date: date, id: String(r[COL.id]), line: Number(r[COL.line]) || 0, type: String(r[COL.type]),
       ref: String(r[COL.reference]), desc: String(r[COL.description]), ldesc: String(r[COL.lineDescription]),
       party: String(r[COL.party]), partyId: String(r[COL.partyId] || ''), due: r[COL.dueDate] instanceof Date ? r[COL.dueDate] : null,
       code: String(r[COL.accountCode]).trim(),
